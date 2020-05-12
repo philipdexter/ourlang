@@ -7,9 +7,6 @@ Import ListNotations.
 
 Set Implicit Arguments.
 
-Definition append (A:Type) (l1 : list A) (l2 : list A) := concat [l1; l2].
-Notation "a ++ b" := (append a b).
-
 Notation key := nat.
 Notation payload := nat.
 Notation label := nat.
@@ -189,13 +186,42 @@ Qed.
 
 (* hint unfold *)
 
-Definition keys (b : backend) :=
+Definition backend_keys (b : backend) :=
 map (fun s => getKey (getNode s)) b.
-Hint Unfold keys.
+Hint Unfold backend_keys.
+
+Definition ostream_keys (os : ostream) :=
+concat (map (fun o => match o with
+             | l ->> add k _ => [k]
+             | _ => []
+           end) os).
+Hint Unfold ostream_keys.
+
+Definition config_keys (c : config) :=
+match c with
+| C b os rs => concat [backend_keys b; ostream_keys os]
+end.
+Hint Unfold config_keys.
 
 Definition ostream_labels (os : ostream) :=
 map (fun o => match o with l ->> _ => l end) os.
 Hint Unfold ostream_labels.
+
+Lemma ostream_labels_dist :
+  forall os1 os2,
+  ostream_labels (os1 ++ os2) = ostream_labels os1 ++ ostream_labels os2.
+Proof using.
+ induction os1; intros; crush.
+Qed.
+Hint Rewrite ostream_labels_dist.
+
+Lemma backend_keys_dist :
+  forall b1 b2,
+  backend_keys (b1 ++ b2) = backend_keys b1 ++ backend_keys b2.
+Proof using.
+ induction b1; intros; crush.
+Qed.
+Hint Rewrite backend_keys_dist.
 
 Definition rstream_labels (rs : rstream) :=
 map (fun r => match r with l ->>> _ => l end) rs.
@@ -204,6 +230,18 @@ Hint Unfold rstream_labels.
 Definition backend_labels (b : backend) :=
 concat (map (fun s => ostream_labels (getOstream s)) b).
 Hint Unfold backend_labels.
+
+Lemma backend_labels_dist :
+  forall b1 b2,
+  backend_labels (b1 ++ b2) = backend_labels b1 ++ backend_labels b2.
+Proof using.
+  induction b1; intros; intuition.
+  simpl.
+  unfold backend_labels in *.
+  simpl.
+  crush.
+Qed.
+Hint Rewrite backend_labels_dist.
 
 Definition config_labels (c : config) :=
 match c with
@@ -217,10 +255,126 @@ Inductive distinct (A : Type) : list A -> Prop :=
 | distinct_many : forall xs x xs', xs = x :: xs' -> not (In x xs') -> distinct xs' -> distinct xs.
 Hint Constructors distinct.
 
+Lemma distinct_remove :
+  forall A (x : A) xs,
+  distinct (x :: xs) ->
+  distinct xs /\ not (In x xs).
+Proof using.
+  intros.
+  inversion H; crush.
+Qed.
+Hint Rewrite distinct_remove.
+
+Lemma not_in_app_comm :
+  forall A (x : A) xs ys,
+  ~ In x (xs ++ ys) ->
+  ~ In x (ys ++ xs).
+Proof using.
+  unfold not in *.
+  intros.
+  apply List.in_app_or in H0.
+  inversion H0; crush.
+Qed.
+
+Lemma not_in_remove :
+  forall A (x : A) y xs,
+  ~ In x (y :: xs) ->
+  ~ In x xs /\ x <> y.
+Proof using.
+  induction xs; crush.
+Qed.
+Hint Rewrite not_in_remove.
+
+Lemma distinct_rotate :
+  forall A (x : A) xs ys,
+  distinct (x :: xs ++ ys) ->
+  distinct (xs ++ x :: ys).
+Proof using.
+  induction xs; intros; crush.
+  apply distinct_remove in H; destruct H.
+  apply distinct_remove in H; destruct H.
+  crush.
+  assert (distinct (x :: xs ++ ys)).
+  eapply distinct_many; crush.
+  apply IHxs in H0.
+  apply distinct_many with (x := a) (xs' := xs ++ x :: ys); crush.
+  apply List.in_app_or in H4; destruct H4; crush.
+Qed.
+Hint Rewrite distinct_rotate.
+
+Lemma distinct_app_comm :
+  forall A (xs : list A) ys,
+  distinct (xs ++ ys) ->
+  distinct (ys ++ xs).
+Proof.
+  induction xs; intros ys Ih.
+  - rewrite List.app_nil_r; assumption.
+  - simpl in Ih.
+    apply distinct_remove in Ih.
+    destruct Ih.
+    apply IHxs in H.
+    apply not_in_app_comm in H0.
+    apply distinct_rotate.
+    eapply distinct_many; crush.
+Qed.
+
+Lemma distinct_remove_middle :
+  forall A (x : A) xs ys,
+  distinct (xs ++ [x] ++ xs) ->
+  distinct (xs ++ ys).
+Proof.
+Admitted.
+Hint Rewrite distinct_remove_middle.
+
+Lemma in_empty :
+  forall A (x : A),
+  In x [] -> False.
+Proof using.
+  intros A.
+  unfold In.
+  auto.
+Qed.
+
+Lemma distinct_concat :
+  forall A (xs : list A) ys,
+  distinct (xs ++ ys) ->
+  distinct xs /\ distinct ys.
+Proof using.
+  intros A xs.
+  induction xs; intros.
+  - simpl in H. split; crush.
+  - split. simpl in H. eapply distinct_many. crush.
+    inversion H.
+    * intuition.
+      assert (xs = []).
+      destruct xs.
+      + reflexivity.
+      + inversion H2.
+      + rewrite H3 in H0. apply in_empty with (A := A) (x := a). auto.
+    * assert (a = x) by crush.
+      crush.
+    * apply distinct_remove in H.
+      eapply IHxs in H.
+      inversion H.
+      assumption.
+    * simpl in H.
+      apply distinct_remove in H.
+      eapply IHxs in H.
+      inversion H.
+      assumption.
+Qed.
+
+Lemma distinct_rotate_rev :
+  forall A (x : A) xs ys,
+  distinct (xs ++ x :: ys) ->
+  distinct (x :: xs ++ ys).
+Proof.
+Admitted.
+Hint Rewrite distinct_rotate.
+
 Inductive well_typed : config -> Prop :=
-| WT : forall c b os rs,
-    c = C b os rs ->
-    distinct (keys b) ->
+| WT : forall c,
+    distinct (config_keys c) ->
     distinct (config_labels c) ->
     well_typed c.
 Hint Constructors well_typed.
@@ -230,13 +384,71 @@ Proof using.
   eapply WT; repeat crush; repeat (eapply distinct_many; crush).
 Qed.
 
+Lemma cons_to_app :
+  forall A (x : A) xs,
+  x :: xs = [x] ++ xs.
+Proof using.
+  intros.
+  crush.
+Qed.
+
 Lemma well_typed_preservation :
   forall c1 c2,
   well_typed c1 ->
   c1 --> c2 ->
   well_typed c2.
 Proof.
-Admitted.
+  intros.
+  inversion H0; inversion H; eapply WT; crush.
+  (* S_Empty *)
+  - destruct op; crush.
+    apply distinct_remove in H6.
+    crush.
+  - apply distinct_rotate.
+    assumption.
+  (* S_First *)
+  - unfold ostream_keys in H6.
+    destruct o. destruct o.
+    + simpl in H6.
+      unfold ostream_keys.
+      assumption.
+    + simpl in H6.
+      rewrite List.app_nil_r in H6.
+      rewrite List.app_nil_r.
+      apply distinct_app_comm with (A:=key) (xs := (getKey n1 :: backend_keys b')) in H6.
+      simpl in H6.
+      apply distinct_remove in H6.
+      apply distinct_app_comm in H6.
+      assumption.
+  - rewrite List.app_nil_r. rewrite List.app_nil_r in H7.
+    unfold backend_labels. simpl.
+    unfold backend_labels in H7. simpl in H7.
+    destruct o. crush.
+    apply distinct_rotate.
+    remember (ostream_labels os' ++ rstream_labels rs) as y.
+    assert (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (getOstream s)) b') ++ y =
+            (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (getOstream s)) b')) ++ y) by crush.
+    rewrite H1.
+    rewrite List.app_assoc in H7.
+    apply distinct_rotate_rev with (x:=n) in H7.
+    crush.
+  (* S_Add *)
+  - apply distinct_rotate_rev. crush.
+  - unfold backend_labels. simpl.
+    rewrite List.app_nil_r. rewrite List.app_nil_r in H7.
+    apply distinct_rotate_rev in H7.
+    rewrite List.app_assoc.
+    apply distinct_rotate.
+    crush.
+  (* S_Inc *)
+  - crush.
+  - apply distinct_rotate_rev in H9.
+    rewrite List.app_assoc.
+    rewrite List.app_assoc.
+    apply distinct_rotate.
+    unfold backend_labels at 2.
+    crush.
+Qed.
 
 Notation "cx -v cy" := (exists cu cv, cx -->* cu -> cy -->* cv -> cu = cv) (at level 40).
 
