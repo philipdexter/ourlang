@@ -1,9 +1,12 @@
 
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
+From Coq Require Import Sorting.Permutation.
 From Coq Require Import Arith.PeanoNat.
 From Coq Require Import Arith.Peano_dec.
 Import ListNotations.
+
+Hint Constructors Permutation.Permutation.
 
 Set Implicit Arguments.
 
@@ -474,7 +477,14 @@ Inductive goes_to : config -> config -> Prop :=
 where "cx -v cy" := (goes_to cx cy).
 Hint Constructors goes_to.
 *)
-Notation "cx -v cy" := (exists cu cv, cx -->* cu /\ cy -->* cv /\ cu = cv) (at level 40).
+
+Reserved Notation "c1 '==' c2" (at level 40).
+Inductive equiv : config -> config -> Prop :=
+| equiv_refl : forall c, c == c
+| equiv_permutation : forall b os rs rs', Permutation.Permutation rs rs' -> C b os rs == C b os rs'
+where "c1 == c2" := (equiv c1 c2).
+Hint Constructors equiv.
+Notation "cx -v cy" := (exists cu cv, cx -->* cu /\ cy -->* cv /\ cu == cv) (at level 40).
 
 Lemma goes_to_refl :
   forall c,
@@ -544,7 +554,7 @@ Proof.
             simpl.
             eapply S_First with (os1 := l0 ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       (* b1 != [] *)
       - split; try split.
         + eapply multi_step.
@@ -557,7 +567,7 @@ Proof.
             inversion H6.
             eapply S_First; crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       }
     (* S_Last *)
     + crush.
@@ -575,7 +585,7 @@ Proof.
             inversion H6.
             eapply S_First; crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       (* b1 != [] *)
       - split; try split.
         + eapply multi_step.
@@ -588,7 +598,7 @@ Proof.
             inversion H6.
             eapply S_First; crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       }
   (* S_Add *)
   - inversion cxcz.
@@ -614,7 +624,7 @@ Proof.
             inversion H4.
             eapply S_Add; crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       (* b1 != [] *)
       - split; try split.
         + eapply multi_step.
@@ -627,7 +637,7 @@ Proof.
             inversion H4.
             eapply S_Add; crush.
           * eapply multi_refl.
-        + reflexivity.
+        + crush.
       }
     (* S_Last *)
     + crush.
@@ -641,13 +651,13 @@ Proof.
             eapply S_Last with (b1 := [<<N k v; []>>]); crush.
           * eapply multi_refl.
         + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs)).
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs)).
             inversion H4.
-            (* TODO problem, need rstream as a set *)
+            eapply S_Add; crush.
+          * eapply multi_refl.
+        + crush.
 
       }
 
-eapply goes_to_steps.
-      eapply multi_step.
 
 Qed.
