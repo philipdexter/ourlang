@@ -121,14 +121,14 @@ Inductive step : config -> config -> Prop :=
     s1' = <<(N k (v + 1)); os1'>> ->
     In k ks ->
     c --> C (b1 ++ s1' :: b2) os rs
-| S_Complete : forall c b os rs l n1 os1 os1' op b1 k,
+| S_Last : forall c b os rs l n1 os1 os1' op b1 k,
     c = C b os rs ->
     b = b1 ++ [<<n1; os1>>] ->
     os1 = l ->> op :: os1' ->
     k = getKey n1 ->
     not (In k (target op)) ->
     c --> C (b1 ++ [<<n1; os1'>>]) os (l ->>> final op :: rs)
-(* S_Last *)
+(* S_Complete *)
 where "c1 --> c2" := (step c1 c2).
 Hint Constructors step.
 Definition relation (X : Type) := X -> X -> Prop.
@@ -180,7 +180,7 @@ Example step_addinc4 : (C [<<(N 1 1); [2 ->> inc []]>>] [] [1 ->>> 1]) --> (C [<
 Proof using.
   assert (0 = final (inc [])) by crush.
   rewrite -> H.
-  eapply S_Complete with (c := (C [<<(N 1 1); [2 ->> inc []]>>] [] [1 ->>> 1])) (n1 := (N 1 1)) (os1 := [2 ->> inc []]) (b1 := []); crush.
+  eapply S_Last with (c := (C [<<(N 1 1); [2 ->> inc []]>>] [] [1 ->>> 1])) (n1 := (N 1 1)) (os1 := [2 ->> inc []]) (b1 := []); crush.
 Qed.
 
 Example step_addinc : (C [] [1 ->> add 1 0; 2 ->> inc [1]] []) -->* (C [<<(N 1 1); []>>] [] [2 ->>> 0; 1 ->>> 1]).
@@ -500,10 +500,7 @@ Proof.
   - inversion cxcz.
     (* S_Empty *)
     + crush.
-      assert (Hos : os' = os'0) by crush; rewrite Hos.
-      assert (Hrs : rs = rs0) by crush; rewrite Hrs.
-      assert (Hl : l = l0) by crush; rewrite Hl.
-      assert (Hop : op = op0) by crush; rewrite Hop.
+      inversion H5.
       apply goes_to_refl.
     (* S_First *)
     + crush.
@@ -513,7 +510,7 @@ Proof.
     + rewrite H in H5. rewrite H6 in H5.
       inversion H5.
       destruct b1; crush.
-    (* S_Complete *)
+    (* S_Last *)
     + rewrite H in H5. rewrite H6 in H5.
       inversion H5.
       destruct b1; crush.
@@ -523,13 +520,7 @@ Proof.
     + crush.
     (* S_First *)
     + crush.
-      assert (Hos : os' = os'0) by crush; rewrite Hos in *.
-      assert (Hoss : os1 = os2) by crush; rewrite Hoss in *.
-      assert (Hrs : rs = rs0) by crush; rewrite Hrs in *.
-      assert (Hl : l = l0) by crush; rewrite Hl in *.
-      assert (Hop : op = op0) by crush; rewrite Hop in *.
-      assert (Hn : n1 = n0) by crush; rewrite Hn in *.
-      assert (Hb : b' = b'0) by crush; rewrite Hb in *.
+      inversion H6.
       apply goes_to_refl.
     (* S_Add *)
     + crush.
@@ -540,53 +531,74 @@ Proof.
       {
       destruct b1; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
-      - split.
+      - split; try split.
         + eapply multi_step.
           * instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
             inversion H6.
             simpl.
             eapply S_Inc with (b1 := []); crush.
           * eapply multi_refl.
-        + split.
-          * {
-            eapply multi_step.
-            - instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
-              inversion H6.
-              simpl.
-              eapply S_First with (os1 := l0 ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
-            - eapply multi_refl.
-            }
-          * reflexivity.
+        + eapply multi_step.
+          * instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
+            inversion H6.
+            simpl.
+            eapply S_First with (os1 := l0 ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
+          * eapply multi_refl.
+        + reflexivity.
       (* b1 != [] *)
-      - split.
+      - split; try split.
         + eapply multi_step.
           * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
             inversion H6.
             eapply S_Inc with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
           * eapply multi_refl.
-        + split.
-          * {
-            eapply multi_step.
-            - instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
-              inversion H6.
-              eapply S_First; crush.
-            - eapply multi_refl.
-            }
-          * reflexivity.
+        + eapply multi_step.
+          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
+            inversion H6.
+            eapply S_First; crush.
+          * eapply multi_refl.
+        + reflexivity.
       }
-    (* S_Complete *)
+    (* S_Last *)
     + crush.
       {
       destruct b1; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
-      - split.
+      - split; try split.
         + eapply multi_step.
-          * instantiate (1 := ...).
+          * simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
+            inversion H6.
+            eapply S_Last with (b1 := []); crush.
+          * eapply multi_refl.
+        + eapply  multi_step.
+          * simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
+            inversion H6.
+            eapply S_First; crush.
+          * eapply multi_refl.
+        + reflexivity.
+      (* b1 != [] *)
+      - split; try split.
+        + eapply multi_step.
+          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
+            inversion H6.
+            eapply S_Last with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
+          * eapply multi_refl.
+        + eapply multi_step.
+          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
+            inversion H6.
+            eapply S_First; crush.
+          * eapply multi_refl.
+        + reflexivity.
+      }
+  (* S_Add *)
+  - 
+
+C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs
+C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)
 
       }
 
 eapply goes_to_steps.
       eapply multi_step.
-    (* S_Complete *)
 
 Qed.
