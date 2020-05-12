@@ -65,6 +65,16 @@ Inductive config : Type :=
 | C : backend -> ostream -> rstream -> config.
 Hint Constructors config.
 
+Definition getNode (s : station) :=
+match s with
+| <<n; _>> => n
+end.
+
+Definition getOstream (s : station) :=
+match s with
+| <<_; os>> => os
+end.
+
 Definition getKey (n : node) :=
 match n with
   | N k _ => k
@@ -165,7 +175,7 @@ Proof using.
 Qed.
 
 Example step_addinc : (C [] [1 ->> add 1 0; 2 ->> inc [1]] []) -->* (C [<<(N 1 1); []>>] [] [2 ->>> 0; 1 ->>> 1]).
-Proof.
+Proof using.
   eapply multi_step.
   apply step_addinc1.
   eapply multi_step.
@@ -175,4 +185,65 @@ Proof.
   eapply multi_step.
   apply step_addinc4.
   eapply multi_refl.
+Qed.
+
+(* hint unfold *)
+
+Definition keys (b : backend) :=
+map (fun s => getKey (getNode s)) b.
+Hint Unfold keys.
+
+Definition ostream_labels (os : ostream) :=
+map (fun o => match o with l ->> _ => l end) os.
+Hint Unfold ostream_labels.
+
+Definition rstream_labels (rs : rstream) :=
+map (fun r => match r with l ->>> _ => l end) rs.
+Hint Unfold rstream_labels.
+
+Definition backend_labels (b : backend) :=
+concat (map (fun s => ostream_labels (getOstream s)) b).
+Hint Unfold backend_labels.
+
+Definition config_labels (c : config) :=
+match c with
+| C b os rs => concat [backend_labels b; ostream_labels os; rstream_labels rs]
+end.
+Hint Unfold config_labels.
+
+Inductive distinct (A : Type) : list A -> Prop :=
+| distinct_empty : distinct []
+| distinct_one : forall x, distinct [x]
+| distinct_many : forall xs x xs', xs = x :: xs' -> not (In x xs') -> distinct xs' -> distinct xs.
+Hint Constructors distinct.
+
+Inductive well_typed : config -> Prop :=
+| WT : forall c b os rs,
+    c = C b os rs ->
+    distinct (keys b) ->
+    distinct (config_labels c) ->
+    well_typed c.
+Hint Constructors well_typed.
+
+Example wt : well_typed (C [<<(N 1 2); [5 ->> inc []]>>; <<(N 2 3); [4 ->> inc []]>>] [2 ->> inc []; 3 ->> inc []] [1 ->>> 2]).
+Proof using.
+  eapply WT; repeat crush; repeat (eapply distinct_many; crush).
+Qed.
+
+Lemma well_typed_preservation :
+  forall c1 c2,
+  well_typed c1 ->
+  c1 --> c2 ->
+  well_typed c2.
+Proof.
+Admitted.
+
+Notation "cx -v cy" := (exists cu cv, cx -->* cu -> cy -->* cv -> cu = cv) (at level 40).
+
+Lemma local_confluence_p1 :
+  forall cx cy cz,
+  cx --> cy ->
+  cx --> cz ->
+  cy -v cz.
+Proof.
 Qed.
