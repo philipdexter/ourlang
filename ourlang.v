@@ -591,10 +591,59 @@ Proof.
         + reflexivity.
       }
   (* S_Add *)
-  - 
-
-C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs
-C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)
+  - inversion cxcz.
+    (* S_Empty *)
+    + crush. inversion H4. crush.
+    (* S_First *)
+    + crush. inversion H4. crush.
+    (* S_Add *)
+    + crush. inversion H4. crush. apply goes_to_refl.
+    (* S_Inc *)
+    + crush.
+      {
+      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      (* b1 = [] *)
+      - split; try split.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+            inversion H4.
+            eapply S_Inc with (b1 := [<< N k v; [] >>]); crush.
+          * eapply multi_refl.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+            inversion H4.
+            eapply S_Add; crush.
+          * eapply multi_refl.
+        + reflexivity.
+      (* b1 != [] *)
+      - split; try split.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+            inversion H4.
+            eapply S_Inc with (b1 := << N k v; [] >> :: s :: b1); crush.
+          * eapply multi_refl.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+            inversion H4.
+            eapply S_Add; crush.
+          * eapply multi_refl.
+        + reflexivity.
+      }
+    (* S_Last *)
+    + crush.
+      {
+      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      (* b1 = [] *)
+      - split; try split.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs)).
+            inversion H4.
+            eapply S_Last with (b1 := [<<N k v; []>>]); crush.
+          * eapply multi_refl.
+        + eapply multi_step.
+          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs)).
+            inversion H4.
+            (* TODO problem, need rstream as a set *)
 
       }
 
