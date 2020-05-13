@@ -710,7 +710,7 @@ forall x y z,
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
   (equiv A sim) ->
   diamond_property_modulo R1 R2 sim -> diamond_property_modulo R2 R1 sim.
-Proof.
+Proof using.
   intros A R1 R2 sim Hequivsim H.
   unfold diamond_property_modulo in *.
   intros x y z xy xz.
@@ -740,14 +740,109 @@ Hint Constructors star.
 Lemma clos_refl_multi :
   forall {A} R x y,
   clos_refl_trans_1n A R x y <-> exists n, star R n x y.
-Proof.
-Admitted.
+Proof using.
+  split; intros.
+  - induction H.
+    + eapply ex_intro. crush.
+    + destruct IHclos_refl_trans_1n.
+      eapply ex_intro.
+      eapply Step.
+      instantiate (1 := y).
+      assumption.
+      instantiate (1 := x0).
+      assumption.
+  - destruct H.
+    induction H.
+    + crush.
+    + constructor 2 with (y := y); crush.
+Qed.
 Hint Resolve clos_refl_multi.
 
 Lemma on_the_left :
   forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  equiv A sim ->
   diamond_property_modulo R1 R2 sim -> forall n, diamond_property_modulo (star R1 n) R2 sim.
 Proof.
+  intros A R1 R2 sim Heqsim Hdiamond n.
+  (* unfold diamond_property_modulo in *. *)
+  (* intros x y z xy xz. *)
+  induction n.
+  - unfold diamond_property_modulo in *.
+    intros x y z xy xz.
+    right.
+    inversion xy; subst; clear xy.
+    eapply ex_intro.
+    eapply ex_intro.
+    split; try split.
+    instantiate (1 := z).
+    assumption.
+    instantiate (1 := z).
+    crush.
+    destruct Heqsim.
+    crush.
+  - unfold diamond_property_modulo in *.
+    intros x y z starxy xz.
+    inversion starxy.
+    remember H0 as H0'.
+    clear HeqH0'.
+    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0'.
+    + remember H1 as H1'.
+      clear HeqH1'.
+      apply IHn with (x:=y0) (y:=y) (z:=z) in H1'.
+      destruct H1'.
+      * left; crush.
+      * subst.
+
+destruct H0'.
+      * left; crush.
+
+
+
+    + assumption.
+
+    destruct H0'.
+    apply IHn with () in H1.
+
+    unfold diamond_property_modulo in *.
+    intros x y z xy xz.
+    inversion xy; subst.
+    remember y0 as x'.
+    clear Heqx'.
+    remember H0 as H0'.
+    clear HeqH0'.
+    apply Hdiamond with (x:=x) (y:=x') (z:=z) in H0'.
+    destruct H0'.
+    + remember H1 as H1'.
+      clear HeqH1'.
+      eapply IHn with (z:=z) in H1'.
+      destruct H1'.
+      * left; crush.
+      * right.
+        crush.
+        eapply ex_intro.
+        instantiate (1 := x0).
+        eapply ex_intro.
+        instantiate (1 := x1).
+        split; try split.
+
+
+    apply IHn with (x:=x) (y:=x') (z:=z) in H1.
+    eapply IHn with (x:=y0) (y:=) (z:=z) in H1.
+    destruct H1.
+    + left. crush.
+    + right.
+      destruct H.
+      destruct H.
+      crush.
+      eapply ex_intro.
+      instantiate (1 := x0).
+      eapply ex_intro.
+      instantiate (1 := x1).
+      split ; try split.
+      * assumption.
+      * admit.
+      * assumption.
+
 Admitted.
 Hint Resolve on_the_left.
 
