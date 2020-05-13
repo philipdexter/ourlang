@@ -1,3 +1,18 @@
+(* TODO add refl rule to reduction and remove those equal conditions from the general case AND ourlang's case *)
+(* then the general case should be easier to prove, but still need to prove that sim_goes_to *)
+
+(* BUT just focus on proving ourlang stuff before i go back into general *)
+(* because it might be that we don't need that equiv stuff eventually, if we don't care about MQO rules
+   (which are the only rules that need the equiv stuff) *)
+(* or... is that true? what if i prop in one and fuse in another *)
+(* oh that sim_go_to is probably P2 of local confluence, so a hard proof *)
+(* okay we probably don't need multi step, but we do need equiv, def, for example if we prop one but opt another *)
+(* oh wait, i think we do need multi step, because what if a bunch are fused and it's propped, then all
+   of the ones not fused have to prop too. either that or we make prop allowed to batch prop, maybe that's easiest,
+   it'd still be an issue with reordering though... *)
+(* so we definitely need multi step *)
+(* could we get away with just multistep, and no equiv? *)
+(* maybe... let's try doing that and see how far it gets us, ignoring local to global stuff for now *)
 
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
@@ -510,6 +525,7 @@ Proof using.
 Qed.
 Hint Rewrite cequiv_symmetric.
 
+(* put refl rule here instead of == *)
 Notation "cx -v cy" := (cx == cy \/ exists cu cv, cx --> cu /\ cy --> cv /\ cu == cv) (at level 40).
 Definition goes_to (c1 : config) (c2 : config) : Prop := c1 -v c2.
 
@@ -696,16 +712,65 @@ Admitted.
 
 (* try to add a simple frontend with just an emit *)
 
+(* trying diamond property multi step *)
+Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
+| Zero : forall x, star R 0 x x
+| Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
+Hint Constructors star.
+
+Definition diamond_property {A : Type}
+           (R1 R2 : A -> A -> Prop) :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists w n m, star R2 n y w /\ star R1 m z w.
+Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> diamond_property R2 R1.
+Proof.
+  intros.
+  unfold diamond_property in *.
+  intros x y z Rxy Rxz.
+  apply H with (x:=x) (y:=z) in Rxy; try assumption.
+  destruct Rxy; destruct H0; destruct H0; destruct H0.
+  repeat (eapply ex_intro).
+  split ; try split.
+  instantiate (1:=x0).
+  instantiate (1:=x2).
+  assumption.
+  instantiate (1:=x1).
+  assumption.
+Qed.
+
+Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
+| Zero : forall x, clos_refl_trans R x x
+| Step : forall x y, clos_refl_trans R x y -> forall z, R y z -> clos_refl_trans R x z.
+
+Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
+  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
 
 
 (*************)
-(* change to multi step *)
+(* remove sim case *)
 Definition diamond_property_modulo {A : Type}
            (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop) :=
 forall x y z,
     R1 x y ->
     R2 x z ->
     sim y z \/ exists u v, R2 y u /\ R1 z v /\ sim u v.
+
+Definition diamond_property {A : Type}
+           (R1 R2 : A -> A -> Prop) :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists w, R2 y w /\ R1 z w.
+
+Definition diamond_property' {A : Type}
+           (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop) :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists u v, R2 y u /\ R1 z v /\ sim u v.
 
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
   (equiv A sim) ->
@@ -759,6 +824,116 @@ Qed.
 Hint Resolve clos_refl_multi.
 
 Lemma on_the_left :
+  forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> forall n, diamond_property (star R1 n) R2.
+Proof using.
+  intros A R1 R2 Hdiamond.
+  induction n.
+  - unfold diamond_property in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    eapply ex_intro.
+    split.
+    instantiate (1 := z).
+    assumption.
+    crush.
+  - unfold diamond_property in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0.
+    inversion H0; subst; clear H0.
+    destruct H as [y0x0 zx0].
+    rename H1 into stary0y.
+    apply IHn with (x:=y0) (y:=y) (z:=x0) in stary0y.
+    destruct stary0y.
+    destruct H.
+    eapply ex_intro.
+    instantiate (1:=x1).
+    split.
+    assumption.
+    eapply Step.
+    instantiate (1:=x0).
+    assumption.
+    assumption.
+    assumption.
+    assumption.
+Qed.
+
+(* TODO okay, just need refl rule *)
+
+Instance cequiv_reflective : Reflexive cequiv := cequiv_refl.
+Instance cequiv_sym : Symmetric cequiv := cequiv_symmetric.
+Instance cequiv_transitive : Transitive cequiv := cequiv_trans.
+Program Instance cequiv_equivalence : Equivalence cequiv.
+
+
+Definition sim_goes_to {A : Type} (R : A -> A -> Prop) (sim : A -> A -> Prop) :=
+  forall x y w,
+  sim x y ->
+  R x w ->
+  exists w', R y w' /\ sim w w'.
+
+Lemma ourlang_sim_goes_to :
+  sim_goes_to step cequiv.
+Proof.
+  unfold sim_goes_to.
+  intros x y w simxy xw.
+  inversion simxy.
+  crush.
+  subst.
+  inversion xw; crush.
+  (* S_Empty *)
+  - eapply ex_intro.
+Admitted.
+
+Lemma on_the_left' :
+  forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  equiv A sim ->
+  diamond_property' R1 R2 sim -> forall n, diamond_property' (star R1 n) R2 sim.
+Proof using.
+  intros A R1 R2 sim Hsimequiv Hdiamond.
+  induction n.
+  - unfold diamond_property' in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    eapply ex_intro.
+    eapply ex_intro.
+    split.
+    instantiate (1 := z).
+    assumption.
+    crush.
+    destruct Hsimequiv.
+    crush.
+  - unfold diamond_property' in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0.
+    inversion H0; subst; clear H0.
+    destruct H as [y0x0 zx0].
+    rename H1 into stary0y.
+    apply IHn with (x:=y0) (y:=y) (z:=x0) in stary0y.
+    destruct stary0y.
+    destruct H.
+    eapply ex_intro.
+    eapply ex_intro.
+    instantiate (2:=x1).
+    split.
+    crush.
+    split.
+    eapply Step.
+    instantiate (1:=y0x0).
+    crush.
+    crush.
+    (* now try to use sim_goes_to to solve this *)
+    (* don't instantiate to x2, but to something that y0x0 goes to that is sim with x2 *)
+    instantiate (1:=x2).
+    admit.
+    crush.
+    crush.
+    crush.
+Qed.
+
+Lemma on_the_left :
   forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
   equiv A sim ->
   diamond_property_modulo R1 R2 sim -> forall n, diamond_property_modulo (star R1 n) R2 sim.
@@ -780,6 +955,9 @@ Proof.
     crush.
     destruct Heqsim.
     crush.
+  - unfold diamond_property_modulo in *.
+
+
   - unfold diamond_property_modulo in *.
     intros x y z starxy xz.
     inversion starxy.
@@ -904,11 +1082,6 @@ Proof using.
   intros.
   eapply local_confluence_p1 with (cx:=x) (cy:=y) (cz:=z); crush.
 Qed.
-
-Instance cequiv_reflective : Reflexive cequiv := cequiv_refl.
-Instance cequiv_sym : Symmetric cequiv := cequiv_symmetric.
-Instance cequiv_transitive : Transitive cequiv := cequiv_trans.
-Program Instance cequiv_equivalence : Equivalence cequiv.
 
 Theorem ourlang_confluence :
   diamond_property_modulo (clos_refl_trans_1n config step) (clos_refl_trans_1n config step) cequiv.
