@@ -712,6 +712,188 @@ Admitted.
 
 (* try to add a simple frontend with just an emit *)
 
+(* trying multi step with boring guy *)
+Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
+| CRTZero : forall x, clos_refl_trans R x x
+| CRTStep : forall x y, clos_refl_trans R x y -> forall z, R y z -> clos_refl_trans R x z.
+Hint Constructors clos_refl_trans.
+
+Definition diamond_property {A : Type} (R1 R2 : A -> A -> Prop) :=
+    forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists w, clos_refl_trans R2 y w /\ clos_refl_trans R1 z w.
+
+Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> diamond_property R2 R1.
+Admitted.
+
+Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
+| Zero : forall x, star R 0 x x
+| Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
+Hint Constructors star.
+
+Lemma clos_refl_star : forall {A} R x y, clos_refl_trans_1n A R x y <-> exists n, star R n x y.
+Proof using.
+  split; intros.
+  - induction H.
+    + eapply ex_intro. crush.
+    + destruct IHclos_refl_trans_1n.
+      eapply ex_intro.
+      eapply Step.
+      instantiate (1 := y).
+      assumption.
+      instantiate (1 := x0).
+      assumption.
+  - destruct H.
+    induction H.
+    + crush.
+    + constructor 2 with (y := y); crush.
+Qed.
+Hint Resolve clos_refl_star.
+
+Lemma on_the_left :
+  forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> forall n, diamond_property (star R1 n) R2.
+Admitted.
+
+Lemma on_the_right :
+  forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> forall n, diamond_property R1 (star R2 n).
+Admitted.
+
+Lemma diamond_property_implies_mn_confluence :
+  forall {A : Type} (R : A -> A -> Prop),
+  diamond_property R R -> forall m n, diamond_property (star R m) (star R n).
+Admitted.
+
+Lemma clos_refl_trans_equiv {A : Type} R :
+  forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
+Admitted.
+Hint Resolve clos_refl_trans_equiv.
+
+Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
+  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
+Admitted.
+Hint Resolve snoc_clos_refl_trans_1n.
+
+Lemma crt_remove :
+  forall {A : Type} R x y,
+  clos_refl_trans_1n A R x y ->
+  clos_refl_trans (clos_refl_trans_1n A R) x y.
+Proof using.
+  intros.
+  induction H.
+  crush.
+  apply clos_refl_trans_equiv.
+  eapply snoc_clos_refl_trans_1n.
+  instantiate (1:=y).
+  constructor 2 with (y:=y).
+  apply clos_refl_trans_equiv.
+  apply CRTStep with (y0:=x) (x0:=x) (z0:=y) in H.
+  assumption.
+  crush.
+  crush.
+  crush.
+Qed.
+
+Lemma star_zero :
+  forall {A : Type} (R : A -> A -> Prop) x y,
+  star R 0 x y ->
+  x = y.
+Proof.
+  intros.
+  inversion H; subst; clear H; crush.
+Qed.
+
+Lemma star_trans :
+  forall {A : Type} (R : A -> A -> Prop) x y z m n,
+  star R m x y ->
+  star R n y z ->
+  star R (m+n) x z.
+Proof using.
+  intros.
+  generalize dependent z.
+  generalize dependent x.
+  generalize dependent y.
+  generalize dependent n.
+  induction m; induction n; intros.
+  - crush.
+    apply star_zero in H; subst; crush.
+  - simpl.
+    apply star_zero in H; subst; crush.
+  - apply star_zero in H0; subst.
+    assert (S m = S m + 0) by crush.
+    rewrite H0 in H.
+    crush.
+  - simpl in *.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    eapply Step.
+    instantiate (1:=y0).
+    assumption.
+    eapply IHm.
+    instantiate (1:=y).
+    assumption.
+    eapply Step.
+    instantiate (1:=y1).
+    assumption.
+    assumption.
+Qed.
+
+Lemma star_remove :
+  forall {A : Type} (R : A -> A -> Prop) x y m,
+  clos_refl_trans (star R m) x y ->
+  clos_refl_trans R x y.
+Proof using.
+  intros A R x y m H.
+  induction H; crush.
+  apply clos_refl_trans_equiv.
+  apply clos_refl_star.
+  apply clos_refl_trans_equiv in IHclos_refl_trans.
+  apply clos_refl_star in IHclos_refl_trans.
+  destruct IHclos_refl_trans.
+  eapply ex_intro.
+  instantiate (1:=x0+m).
+  eapply star_trans.
+  instantiate (1:= y).
+  assumption.
+  assumption.
+Qed.
+
+Theorem diamond_property_implies_confluence :
+  forall {A : Type} (R : A -> A -> Prop),
+  diamond_property R R -> diamond_property (clos_refl_trans_1n A R) (clos_refl_trans_1n A R).
+Proof using.
+  unfold diamond_property in *.
+  intros A R local_diamond x y z xy xz.
+  apply clos_refl_star in xy.
+  apply clos_refl_star in xz.
+  destruct xy as [n xy].
+  destruct xz as [m xz].
+  eapply diamond_property_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
+  unfold diamond_property in *.
+  eapply local_diamond with (z := z) in xy.
+  destruct xy as [v].
+  destruct H.
+  eapply ex_intro.
+  instantiate (1 := v).
+  split.
+  apply crt_remove.
+  apply star_remove in H.
+  apply star_remove in H0.
+  apply clos_refl_trans_equiv.
+  assumption.
+  apply crt_remove.
+  apply star_remove in H.
+  apply star_remove in H0.
+  apply clos_refl_trans_equiv.
+  assumption.
+  assumption.
+Qed.
+
+(*********************)
+
 (* trying diamond property multi step *)
 Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
 | Zero : forall x, clos_refl_trans R x x
