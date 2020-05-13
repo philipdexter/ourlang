@@ -4,7 +4,12 @@ From Coq Require Import Lists.List.
 From Coq Require Import Sorting.Permutation.
 From Coq Require Import Arith.PeanoNat.
 From Coq Require Import Arith.Peano_dec.
+From Coq Require Import Classes.Equivalence.
 Import ListNotations.
+
+From Coq Require Import Relations.Relations.
+From Coq Require Import Relations.Relation_Definitions.
+Hint Constructors clos_refl_trans_1n.
 
 Hint Constructors Permutation.Permutation.
 
@@ -61,10 +66,9 @@ Notation ostream := (list labeled_operation).
 Notation rstream := (list labeled_result).
 
 Inductive station : Type :=
-| S : node -> ostream -> station.
+| St : node -> ostream -> station.
 Hint Constructors station.
-
-Notation "<< n ; os >>" := (S n os).
+Notation "<< n ; os >>" := (St n os).
 
 Notation backend := (list station).
 
@@ -198,8 +202,6 @@ Proof using.
   apply step_addinc4.
   eapply multi_refl.
 Qed.
-
-(* hint unfold *)
 
 Definition backend_keys (b : backend) :=
 map (fun s => getKey (getNode s)) b.
@@ -479,12 +481,58 @@ Hint Constructors goes_to.
 *)
 
 Reserved Notation "c1 '==' c2" (at level 40).
-Inductive equiv : config -> config -> Prop :=
-| equiv_refl : forall c, c == c
-| equiv_permutation : forall b os rs rs', Permutation.Permutation rs rs' -> C b os rs == C b os rs'
-where "c1 == c2" := (equiv c1 c2).
-Hint Constructors equiv.
+Inductive cequiv : config -> config -> Prop :=
+| cequiv_refl : forall c, c == c
+| cequiv_permutation : forall b os rs rs', Permutation.Permutation rs rs' -> C b os rs == C b os rs'
+where "c1 == c2" := (cequiv c1 c2).
+Hint Constructors cequiv.
+
+Lemma cequiv_trans :
+  forall c1 c2 c3,
+  c1 == c2 ->
+  c2 == c3 ->
+  c1 == c3.
+Proof using.
+  intros.
+  inversion H; inversion H0; crush.
+  inversion H5.
+  apply cequiv_permutation.
+  crush.
+Qed.
+
+Lemma cequiv_symmetric :
+  forall c1 c2,
+  c1 == c2 ->
+  c2 == c1.
+Proof using.
+  intros.
+  inversion H; crush.
+Qed.
+Hint Rewrite cequiv_symmetric.
+
 Notation "cx -v cy" := (exists cu cv, cx -->* cu /\ cy -->* cv /\ cu == cv) (at level 40).
+Definition goes_to (c1 : config) (c2 : config) : Prop := c1 -v c2.
+
+Lemma goes_to_symmetric :
+  forall c1 c2,
+  c1 -v c2 ->
+  c2 -v c1.
+Proof using.
+  intros.
+  inversion H.
+  inversion H0.
+  destruct H0.
+  eapply ex_intro.
+  eapply ex_intro.
+  split ; try split.
+  instantiate (1 := x1).
+  crush.
+  instantiate (1 := x).
+  crush.
+  apply cequiv_symmetric.
+  crush.
+Qed.
+Hint Resolve goes_to_symmetric.
 
 Lemma goes_to_refl :
   forall c,
@@ -503,6 +551,7 @@ Lemma local_confluence_p1 :
   cx --> cy ->
   cx --> cz ->
   (cy -v cz).
+(* change this to single step if we don't need multi *)
 Proof.
   intros cx cy cz WTcx cxcy cxcz.
   inversion cxcy.
@@ -656,8 +705,122 @@ Proof.
             eapply S_Add; crush.
           * eapply multi_refl.
         + crush.
+      (* b1 != [] *)
+      - split; try split.
+        + eapply multi_step.
+Admitted.
+(*           * simpl in *. instantiate (1 := ...) *)
 
-      }
+(*             inversion H4. *)
+(*   C (s :: b1 ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) *)
+(*   C (<< N k v; [] >> :: b) os' (l ->>> k :: rs) *)
+
+(*       } *)
 
 
+(* Qed. *)
+
+(* try to add a simple frontend with just an emit *)
+
+
+
+(*************)
+(* change to multi step *)
+Definition diamond_property_modulo {A : Type}
+           (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop) :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists u v, R2 y u /\ R1 z v /\ sim u v.
+
+Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  diamond_property_modulo R1 R2 sim -> diamond_property_modulo R2 R1 sim.
+Proof.
+Admitted.
+Hint Resolve diamond_symmetric.
+
+Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
+| Zero : forall x, star R 0 x x
+| Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
+Hint Constructors star.
+
+Lemma clos_refl_multi :
+  forall {A} R x y,
+  clos_refl_trans_1n A R x y <-> exists n, star R n x y.
+Proof.
+Admitted.
+Hint Resolve clos_refl_multi.
+
+Lemma on_the_left :
+  forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  diamond_property_modulo R1 R2 sim -> forall n, diamond_property_modulo (star R1 n) R2 sim.
+Proof.
+Admitted.
+Hint Resolve on_the_left.
+
+Lemma on_the_right :
+  forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  diamond_property_modulo R1 R2 sim -> forall n, diamond_property_modulo R1 (star R2 n) sim.
+Proof.
+Admitted.
+Hint Resolve on_the_right.
+
+Lemma diamond_property_implies_mn_confluence :
+  forall {A : Type} (R : A -> A -> Prop) (sim : A -> A -> Prop),
+  diamond_property_modulo R R sim -> forall m n, diamond_property_modulo (star R m) (star R n) sim.
+Proof.
+Admitted.
+Hint Resolve diamond_property_implies_mn_confluence.
+
+Theorem diamond_property_implies_confluence :
+  forall {A : Type} (R : A -> A -> Prop) (sim : A -> A -> Prop),
+  equiv A sim ->
+  diamond_property_modulo R R sim -> diamond_property_modulo (clos_refl_trans_1n A R) (clos_refl_trans_1n A R) sim.
+Proof using.
+  unfold diamond_property_modulo in *.
+  intros A R sim simequiv local_diamond x y z xy xz.
+  apply clos_refl_multi in xy.
+  apply clos_refl_multi in xz.
+  destruct xy as [n xy].
+  destruct xz as [m xz].
+  eapply diamond_property_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
+  unfold diamond_property_modulo in *.
+  eapply local_diamond with (z := z) in xy; crush.
+  repeat (eapply ex_intro).
+  split ; try split.
+  apply clos_refl_multi.
+  eapply ex_intro.
+  instantiate (1 := x0).
+  instantiate (1 := m).
+  assumption.
+  apply clos_refl_multi.
+  eapply ex_intro.
+  instantiate (1 := x1).
+  instantiate (1 := n).
+  assumption.
+  assumption.
+Qed.
+(*************)
+
+Lemma ourlang_local_confluence :
+  diamond_property_modulo step step cequiv.
+Proof.
+Admitted.
+
+Instance cequiv_reflective : Reflexive cequiv := cequiv_refl.
+Instance cequiv_sym : Symmetric cequiv := cequiv_symmetric.
+Instance cequiv_transitive : Transitive cequiv := cequiv_trans.
+Program Instance cequiv_equivalence : Equivalence cequiv.
+
+Theorem ourlang_confluence :
+  diamond_property_modulo (clos_refl_trans_1n config step) (clos_refl_trans_1n config step) cequiv.
+Proof using.
+  eapply diamond_property_implies_confluence.
+  unfold equiv.
+  split.
+  apply cequiv_reflective.
+  split.
+  apply cequiv_transitive.
+  apply cequiv_sym.
+  apply ourlang_local_confluence.
 Qed.
