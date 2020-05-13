@@ -708,9 +708,28 @@ forall x y z,
     sim y z \/ exists u v, R2 y u /\ R1 z v /\ sim u v.
 
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  (equiv A sim) ->
   diamond_property_modulo R1 R2 sim -> diamond_property_modulo R2 R1 sim.
 Proof.
-Admitted.
+  intros A R1 R2 sim Hequivsim H.
+  unfold diamond_property_modulo in *.
+  intros x y z xy xz.
+  apply H with (x:=x) (y:=z) in xy; try assumption.
+  destruct xy.
+  - left.
+    destruct Hequivsim.
+    crush.
+  - right.
+    destruct H0; destruct H0; destruct H0; destruct H1.
+    repeat (eapply ex_intro).
+    split; try split.
+    instantiate (1 := x1).
+    assumption.
+    instantiate (1 := x0).
+    assumption.
+    destruct Hequivsim.
+    crush.
+Qed.
 Hint Resolve diamond_symmetric.
 
 Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
