@@ -510,7 +510,7 @@ Proof using.
 Qed.
 Hint Rewrite cequiv_symmetric.
 
-Notation "cx -v cy" := (exists cu cv, cx -->* cu /\ cy -->* cv /\ cu == cv) (at level 40).
+Notation "cx -v cy" := (cx == cy \/ exists cu cv, cx --> cu /\ cy --> cv /\ cu == cv) (at level 40).
 Definition goes_to (c1 : config) (c2 : config) : Prop := c1 -v c2.
 
 Lemma goes_to_symmetric :
@@ -519,18 +519,20 @@ Lemma goes_to_symmetric :
   c2 -v c1.
 Proof using.
   intros.
-  inversion H.
-  inversion H0.
-  destruct H0.
-  eapply ex_intro.
-  eapply ex_intro.
-  split ; try split.
-  instantiate (1 := x1).
-  crush.
-  instantiate (1 := x).
-  crush.
-  apply cequiv_symmetric.
-  crush.
+  destruct H.
+  - left. apply cequiv_symmetric. assumption.
+  - inversion H.
+    destruct H0.
+    right.
+    eapply ex_intro.
+    eapply ex_intro.
+    split ; try split.
+    instantiate (1 := x0).
+    crush.
+    instantiate (1 := x).
+    crush.
+    apply cequiv_symmetric.
+    crush.
 Qed.
 Hint Resolve goes_to_symmetric.
 
@@ -539,21 +541,21 @@ Lemma goes_to_refl :
   c -v c.
 Proof using.
   intros.
-  eapply ex_intro.
-  eapply ex_intro.
-  split ; instantiate (1 := c); crush.
+  left.
+  crush.
 Qed.
 Hint Rewrite goes_to_refl.
 
 Lemma local_confluence_p1 :
   forall cx cy cz,
-  well_typed cx ->
+  (* well_typed cx -> *)
   cx --> cy ->
   cx --> cz ->
   (cy -v cz).
 (* change this to single step if we don't need multi *)
 Proof.
-  intros cx cy cz WTcx cxcy cxcz.
+  (* intros cx cy cz WTcx cxcy cxcz. *)
+  intros cx cy cz cxcy cxcz.
   inversion cxcy.
   (* S_Empty *)
   - inversion cxcz.
@@ -588,65 +590,49 @@ Proof.
     (* S_Inc *)
     + crush.
       {
-      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
       - split; try split.
-        + eapply multi_step.
-          * instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
-            inversion H6.
-            simpl.
-            eapply S_Inc with (b1 := []); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
-            inversion H6.
-            simpl.
-            eapply S_First with (os1 := l0 ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
-          * eapply multi_refl.
+        + instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
+          inversion H6.
+          simpl.
+          eapply S_Inc with (b1 := []); crush.
+        + instantiate (1 := C (<< N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b') os' rs).
+          inversion H6.
+          simpl.
+          eapply S_First with (os1 := l0 ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
         + crush.
       (* b1 != [] *)
       - split; try split.
-        + eapply multi_step.
-          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
-            inversion H6.
-            eapply S_Inc with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
-            inversion H6.
-            eapply S_First; crush.
-          * eapply multi_refl.
+        + instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
+          inversion H6.
+          eapply S_Inc with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
+        + instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + 1); l0 ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
+          inversion H6.
+          eapply S_First; crush.
         + crush.
       }
     (* S_Last *)
     + crush.
       {
-      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
       - split; try split.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
-            inversion H6.
-            eapply S_Last with (b1 := []); crush.
-          * eapply multi_refl.
-        + eapply  multi_step.
-          * simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
-            inversion H6.
-            eapply S_First; crush.
-          * eapply multi_refl.
+        + simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
+          inversion H6.
+          eapply S_Last with (b1 := []); crush.
+        + simpl in *. instantiate (1 := C [<< n1; os1' ++ [l ->> op]>>] os' (l0 ->>> final op0 :: rs0)).
+          inversion H6.
+          eapply S_First; crush.
         + crush.
       (* b1 != [] *)
       - split; try split.
-        + eapply multi_step.
-          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
-            inversion H6.
-            eapply S_Last with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
-            inversion H6.
-            eapply S_First; crush.
-          * eapply multi_refl.
+        + instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
+          inversion H6.
+          eapply S_Last with (b1 := << n1; os1 ++ [l ->> op] >> :: b1); crush.
+        + instantiate (1 := C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ [<< n0; os1' >>]) os' (l0 ->>> final op0 :: rs)).
+          inversion H6.
+          eapply S_First; crush.
         + crush.
       }
   (* S_Add *)
@@ -656,58 +642,46 @@ Proof.
     (* S_First *)
     + crush. inversion H4. crush.
     (* S_Add *)
-    + crush. inversion H4. crush. apply goes_to_refl.
+    + crush. inversion H4. crush.
     (* S_Inc *)
     + crush.
       {
-      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
       - split; try split.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
-            inversion H4.
-            eapply S_Inc with (b1 := [<< N k v; [] >>]); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
-            inversion H4.
-            eapply S_Add; crush.
-          * eapply multi_refl.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+          inversion H4.
+          eapply S_Inc with (b1 := [<< N k v; [] >>]); crush.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+          inversion H4.
+          eapply S_Add; crush.
         + crush.
       (* b1 != [] *)
       - split; try split.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
-            inversion H4.
-            eapply S_Inc with (b1 := << N k v; [] >> :: s :: b1); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
-            inversion H4.
-            eapply S_Add; crush.
-          * eapply multi_refl.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+          inversion H4.
+          eapply S_Inc with (b1 := << N k v; [] >> :: s :: b1); crush.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: s :: b1 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: b2) os' (l ->>> k :: rs)).
+          inversion H4.
+          eapply S_Add; crush.
         + crush.
       }
     (* S_Last *)
     + crush.
       {
-      destruct b1; eapply ex_intro; eapply ex_intro; intros.
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
       (* b1 = [] *)
       - split; try split.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs)).
-            inversion H4.
-            eapply S_Last with (b1 := [<<N k v; []>>]); crush.
-          * eapply multi_refl.
-        + eapply multi_step.
-          * simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs)).
-            inversion H4.
-            eapply S_Add; crush.
-          * eapply multi_refl.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs)).
+          inversion H4.
+          eapply S_Last with (b1 := [<<N k v; []>>]); crush.
+        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs)).
+          inversion H4.
+          eapply S_Add; crush.
         + crush.
       (* b1 != [] *)
       - split; try split.
-        + eapply multi_step.
+        + 
 Admitted.
 (*           * simpl in *. instantiate (1 := ...) *)
 
@@ -731,7 +705,7 @@ Definition diamond_property_modulo {A : Type}
 forall x y z,
     R1 x y ->
     R2 x z ->
-    exists u v, R2 y u /\ R1 z v /\ sim u v.
+    sim y z \/ exists u v, R2 y u /\ R1 z v /\ sim u v.
 
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
   diamond_property_modulo R1 R2 sim -> diamond_property_modulo R2 R1 sim.
@@ -785,27 +759,37 @@ Proof using.
   destruct xz as [m xz].
   eapply diamond_property_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
   unfold diamond_property_modulo in *.
-  eapply local_diamond with (z := z) in xy; crush.
-  repeat (eapply ex_intro).
-  split ; try split.
-  apply clos_refl_multi.
-  eapply ex_intro.
-  instantiate (1 := x0).
-  instantiate (1 := m).
-  assumption.
-  apply clos_refl_multi.
-  eapply ex_intro.
-  instantiate (1 := x1).
-  instantiate (1 := n).
-  assumption.
-  assumption.
+  eapply local_diamond with (z := z) in xy.
+  - destruct xy as [xy|xy].
+    + crush.
+    + right.
+      destruct xy as [u xy]. destruct xy as [v].
+      repeat (eapply ex_intro).
+      split ; try split.
+      * apply clos_refl_multi.
+        eapply ex_intro.
+        instantiate (1 := u).
+        instantiate (1 := m).
+        crush.
+      * apply clos_refl_multi.
+        eapply ex_intro.
+        instantiate (1 := v).
+        instantiate (1 := n).
+        crush.
+      * crush.
+  - crush.
 Qed.
 (*************)
 
+(* define the relation over well-typed configurations *)
+
 Lemma ourlang_local_confluence :
   diamond_property_modulo step step cequiv.
-Proof.
-Admitted.
+Proof using.
+  unfold diamond_property_modulo.
+  intros.
+  eapply local_confluence_p1 with (cx:=x) (cy:=y) (cz:=z); crush.
+Qed.
 
 Instance cequiv_reflective : Reflexive cequiv := cequiv_refl.
 Instance cequiv_sym : Symmetric cequiv := cequiv_symmetric.
