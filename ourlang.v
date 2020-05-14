@@ -1,20 +1,3 @@
-(* TODO add refl rule to reduction and remove those equal conditions from the general case AND ourlang's case *)
-(* then the general case should be easier to prove, but still need to prove that sim_goes_to *)
-
-(* BUT just focus on proving ourlang stuff before i go back into general *)
-(* because it might be that we don't need that equiv stuff eventually, if we don't care about MQO rules
-   (which are the only rules that need the equiv stuff) *)
-(* or... is that true? what if i prop in one and fuse in another *)
-(* oh that sim_go_to is probably P2 of local confluence, so a hard proof *)
-(* okay we probably don't need multi step, but we do need equiv, def, for example if we prop one but opt another *)
-(* oh wait, i think we do need multi step, because what if a bunch are fused and it's propped, then all
-   of the ones not fused have to prop too. either that or we make prop allowed to batch prop, maybe that's easiest,
-   it'd still be an issue with reordering though... *)
-(* so we definitely need multi step *)
-(* could we get away with just multistep, and no equiv? *)
-(* maybe... let's try doing that and see how far it gets us, ignoring local to global stuff for now *)
-
-(* hmmm maybe if we want to get rid of equiv we need to use sets for rstream *)
 
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
@@ -29,6 +12,8 @@ From Coq Require Import Relations.Relation_Definitions.
 Hint Constructors clos_refl_trans_1n.
 
 Hint Constructors Permutation.Permutation.
+
+Ltac inv H := inversion H; subst; clear H.
 
 Set Implicit Arguments.
 
@@ -51,6 +36,7 @@ match op with
 | inc ks => ks
 | add _ _ => []
 end.
+Hint Unfold target.
 
 Definition not_add op : Prop :=
 match op with
@@ -64,6 +50,7 @@ match op with
 | inc ks => 0
 | add k _ => k
 end.
+Hint Unfold final.
 
 Inductive labeled_operation : Type :=
 | lo : label -> operation -> labeled_operation.
@@ -93,25 +80,29 @@ Inductive config : Type :=
 | C : backend -> ostream -> rstream -> config.
 Hint Constructors config.
 
-Definition getNode (s : station) :=
+Definition get_node (s : station) :=
 match s with
 | <<n; _>> => n
 end.
+Hint Unfold get_node.
 
-Definition getOstream (s : station) :=
+Definition get_ostream (s : station) :=
 match s with
 | <<_; os>> => os
 end.
+Hint Unfold get_ostream.
 
 Definition getKey (n : node) :=
 match n with
   | N k _ => k
 end.
+Hint Unfold getKey.
 
 Definition getPayload (n : node) :=
 match n with
   | N _ p => p
 end.
+Hint Unfold getPayload.
 
 Reserved Notation "c1 '-->' c2" (at level 40).
 
@@ -221,7 +212,7 @@ Proof using.
 Qed.
 
 Definition backend_keys (b : backend) :=
-map (fun s => getKey (getNode s)) b.
+map (fun s => getKey (get_node s)) b.
 Hint Unfold backend_keys.
 
 Definition ostream_keys (os : ostream) :=
@@ -262,7 +253,7 @@ map (fun r => match r with l ->>> _ => l end) rs.
 Hint Unfold rstream_labels.
 
 Definition backend_labels (b : backend) :=
-concat (map (fun s => ostream_labels (getOstream s)) b).
+concat (map (fun s => ostream_labels (get_ostream s)) b).
 Hint Unfold backend_labels.
 
 Lemma backend_labels_dist :
@@ -297,7 +288,7 @@ Proof using.
   intros.
   inversion H; crush.
 Qed.
-Hint Rewrite distinct_remove.
+Hint Resolve distinct_remove.
 
 Lemma not_in_app_comm :
   forall A (x : A) xs ys,
@@ -309,6 +300,7 @@ Proof using.
   apply List.in_app_or in H0.
   inversion H0; crush.
 Qed.
+Hint Resolve not_in_app_comm.
 
 Lemma not_in_remove :
   forall A (x : A) y xs,
@@ -317,7 +309,7 @@ Lemma not_in_remove :
 Proof using.
   induction xs; crush.
 Qed.
-Hint Rewrite not_in_remove.
+Hint Resolve not_in_remove.
 
 Lemma distinct_rotate :
   forall A (x : A) xs ys,
@@ -334,7 +326,7 @@ Proof using.
   apply distinct_many with (x := a) (xs' := xs ++ x :: ys); crush.
   apply List.in_app_or in H4; destruct H4; crush.
 Qed.
-Hint Rewrite distinct_rotate.
+Hint Resolve distinct_rotate.
 
 Lemma distinct_rotate_rev :
   forall A (x : A) xs ys,
@@ -350,7 +342,7 @@ Proof using.
   apply List.in_app_or in H2; destruct H2; crush.
   apply distinct_many with (x := x) (xs' := a :: xs ++ ys); crush.
 Qed.
-Hint Rewrite distinct_rotate.
+Hint Resolve distinct_rotate.
 
 Lemma distinct_app_comm :
   forall A (xs : list A) ys,
@@ -367,6 +359,7 @@ Proof using.
     apply distinct_rotate.
     eapply distinct_many; crush.
 Qed.
+Hint Resolve distinct_app_comm.
 
 Lemma distinct_remove_middle :
   forall A (x : A) xs ys,
@@ -380,7 +373,7 @@ Proof using.
   apply distinct_remove in H.
   crush.
 Qed.
-Hint Rewrite distinct_remove_middle.
+Hint Resolve distinct_remove_middle.
 
 Lemma in_empty :
   forall A (x : A),
@@ -390,6 +383,7 @@ Proof using.
   unfold In.
   auto.
 Qed.
+Hint Immediate in_empty.
 
 Lemma distinct_concat :
   forall A (xs : list A) ys,
@@ -406,7 +400,7 @@ Proof using.
       destruct xs.
       + reflexivity.
       + inversion H2.
-      + rewrite H3 in H0. apply in_empty with (A := A) (x := a). auto.
+      + crush.
     * assert (a = x) by crush.
       crush.
     * apply distinct_remove in H.
@@ -421,6 +415,7 @@ Proof using.
       inversion H.
       assumption.
 Qed.
+Hint Resolve distinct_concat.
 
 Inductive well_typed : config -> Prop :=
 | WT : forall c,
@@ -442,6 +437,9 @@ Proof using.
   crush.
 Qed.
 
+Hint Rewrite List.app_assoc.
+Hint Rewrite List.app_nil_r.
+
 Lemma well_typed_preservation :
   forall c1 c2,
   well_typed c1 ->
@@ -452,19 +450,16 @@ Proof using.
   inversion H0; inversion H; eapply WT; crush.
   (* S_Empty *)
   - destruct op; crush.
-  - apply distinct_rotate.
-    assumption.
   (* S_First *)
   - unfold ostream_keys in H8.
     destruct op; crush.
-  - rewrite List.app_nil_r in *.
-    unfold backend_labels. simpl.
+  - unfold backend_labels. simpl.
     unfold backend_labels in H9. simpl in H9.
     destruct op; crush.
     apply distinct_rotate.
     remember (ostream_labels os' ++ rstream_labels rs) as y.
-    assert (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (getOstream s)) b') ++ y =
-            (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (getOstream s)) b')) ++ y) by crush.
+    assert (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
+            (ostream_labels os1 ++ concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
     rewrite H1.
     rewrite List.app_assoc in H9.
     apply distinct_rotate_rev with (x:=l) in H9.
@@ -472,7 +467,6 @@ Proof using.
   (* S_Add *)
   - apply distinct_rotate_rev. crush.
   - unfold backend_labels. simpl.
-    rewrite List.app_nil_r. rewrite List.app_nil_r in H7.
     apply distinct_rotate_rev in H7.
     rewrite List.app_assoc.
     apply distinct_rotate.
@@ -528,6 +522,7 @@ Qed.
 Hint Rewrite cequiv_symmetric.
 
 (* put refl rule here instead of == *)
+(* no, put multi step here *)
 Notation "cx -v cy" := (cx == cy \/ exists cu cv, cx --> cu /\ cy --> cv /\ cu == cv) (at level 40).
 Definition goes_to (c1 : config) (c2 : config) : Prop := c1 -v c2.
 
@@ -563,6 +558,18 @@ Proof using.
   crush.
 Qed.
 Hint Rewrite goes_to_refl.
+
+Lemma target_same_or_different :
+  forall b b1 b2 b3 b4 k v k' v' os os',
+  b = b1 ++ <<N k v; os>> :: b2 ->
+  b = b3 ++ <<N k' v'; os'>> :: b4 ->
+  (b1 = b3 /\ b2 = b4 /\ k = k' /\ v = v' /\ os = os') \/
+  (exists (b' : backend) b'' b''', b = b' ++ <<N k v; os>> :: b'' ++ <<N k' v'; os'>> :: b''') \/
+  (exists (b' : backend) b'' b''', b = b' ++ <<N k' v'; os'>> :: b'' ++ <<N k v; os>> :: b''').
+Proof.
+Admitted.
+
+(* Need lemma saying if take a step HERE then all other nodes before and after are the same *)
 
 Lemma local_confluence_p1 :
   forall cx cy cz,
@@ -699,8 +706,129 @@ Proof.
         + crush.
       (* b1 != [] *)
       - split; try split.
-        + 
-Admitted.
+        + simpl in *. instantiate (1:=C (<< N k v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs0)).
+          inv H4.
+          eapply S_Last with (b1 := << N k v; [] >> :: s :: b1); crush.
+        + simpl in *. instantiate (1:=C (<< N k v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs0)).
+          inv H4.
+          eapply S_Add; crush.
+        + crush.
+      }
+  (* S_Inc *)
+  - inversion cxcz.
+    (* S_Empty *)
+    + crush. destruct b1; crush.
+    (* S_First *)
+    + crush.
+      {
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
+      (* b1 = [] *)
+      - split; try split.
+        + simpl in *. instantiate (1:=C (<< N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l0 ->> op] >> :: b2) os' rs).
+          inv H8.
+          eapply S_First with (os1:=l ->> inc (remove Nat.eq_dec k ks) :: os1''); crush.
+        + simpl in *. instantiate (1:=C (<< N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' ++ [l0 ->> op] >> :: b2) os' rs).
+          inv H8.
+          eapply S_Inc with (b1:=[]); crush.
+        + crush.
+      (* b1 != [] *)
+      - split; try split.
+        + simpl in *. instantiate (1:=C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
+          inv H8.
+          eapply S_First; crush.
+        + simpl in *. instantiate (1:=C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs).
+          inv H8.
+          eapply S_Inc with (b1:=<< n1; os2 ++ [l0 ->> op] >> :: b1); crush.
+        + crush.
+      }
+    (* S_Add *)
+    + crush.
+      {
+      destruct b1; right; eapply ex_intro; eapply ex_intro; intros.
+      (* b1 = [] *)
+      - split; try split.
+        + simpl in *. instantiate (1:=C (<< N k0 v0; [] >> :: << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> k0 :: rs)).
+          inv H8.
+          eapply S_Add with (b:=<< N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2); crush.
+        + simpl in *. instantiate (1:=C (<< N k0 v0; [] >> :: << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> k0 :: rs)).
+          inv H8.
+          eapply S_Inc with (b1:=[<< N k0 v0; [] >>]); crush.
+        + crush.
+      (* b1 != [] *)
+      - split; try split.
+        + simpl in *. instantiate (1:=C (<< N k0 v0; [] >> :: s :: b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> k0 :: rs)).
+          inv H8.
+          eapply S_Add with (b:=s :: b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2); crush.
+        + simpl in *. instantiate (1:=C (<< N k0 v0; [] >> :: s :: b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> k0 :: rs)).
+          inv H8.
+          eapply S_Inc with (b1:=<< N k0 v0; [] >> :: s :: b1); crush.
+        + crush.
+      }
+    (* S_Inc *)
+    + crush. inv H8.
+      {
+      apply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b3) (b4:=b4) (k:=k) (v:=v) (k':=k0) (v':=v0) (os:=l ->> inc ks :: os1'') in H0.
+      - destruct H0.
+        + left. crush. inv H4. crush.
+        + destruct H.
+          * inv H. inv H0. inv H.
+            rewrite H0 in cxcz.
+            assert (b3 = x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) by admit.
+            rewrite H in cxcz.
+            rewrite H0 in cxcy.
+            assert (b2 = x0 ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x1) by admit.
+            rewrite H1 in cxcy.
+            assert (b1 = x) by admit.
+            rewrite H2 in *.
+            assert (b4 = x1) by admit.
+            rewrite H3 in *.
+            right.
+            eapply ex_intro; eapply ex_intro.
+            {
+            split; try split.
+            - instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0).
+              eapply S_Inc; crush.
+            - instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0).
+              crush.
+              eapply S_Inc; crush.
+            - crush.
+            }
+          * inv H. inv H0. inv H.
+            admit.
+      - crush.
+      }
+    (* S_Last *)
+    + crush.
+      {
+      destruct b2.
+      (* b2 = [] *)
+      - right; eapply ex_intro; eapply ex_intro; intros.
+        assert (op = inc ks) by admit.
+        assert (n1 = N k v) by admit.
+        crush.
+      (* b2 != [] *)
+      - assert (exists b2a, b2 = b2a ++ [<< n1; l0 ->> op :: os1'0 >>]) by admit. destruct H.
+        rewrite H in *.
+        right; eapply ex_intro; eapply ex_intro; intros.
+        split; try split.
+        (* TODO need snoc *)
+        (* check if empty if not the snoc *)
+        + simpl in *. instantiate (1:=C ((b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x) ++ [<<n1; os1'0>>]) os (l0 ->>> final op :: rs)).
+          eapply S_Last with (b1:=b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x); crush.
+        + simpl in *. instantiate (1:=C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x ++ [<<n1; os1'0>>]) os (l0 ->>> final op :: rs)).
+          inv H8.
+          eapply S_Inc with (b1:=b1) (b2:=s :: x ++ [<<n1; os1'0>>]); crush.
+          admit.
+        + crush.
+      }
+  (* S_Last *)
+  - inversion cxcz.
+    (* S_Empty *)
+    + crush. destruct b1; crush.
+    (* S_First *)
+    +
+
+
 (*           * simpl in *. instantiate (1 := ...) *)
 
 (*             inversion H4. *)
@@ -728,12 +856,28 @@ Definition diamond_property {A : Type} (R1 R2 : A -> A -> Prop) :=
 
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop),
   diamond_property R1 R2 -> diamond_property R2 R1.
-Admitted.
+Proof using.
+  intros.
+  unfold diamond_property in *.
+  intros x y z Rxy Rxz.
+  apply H with (x:=x) (y:=z) in Rxy; try assumption.
+  destruct Rxy; destruct H0.
+  eapply ex_intro.
+  split.
+  instantiate (1:=x0).
+  assumption.
+  assumption.
+Qed.
 
 Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
 | Zero : forall x, star R 0 x x
 | Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
 Hint Constructors star.
+
+Lemma clos_refl_trans_equiv {A : Type} R :
+  forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
+Admitted.
+Hint Resolve clos_refl_trans_equiv.
 
 Lemma clos_refl_star : forall {A} R x y, clos_refl_trans_1n A R x y <-> exists n, star R n x y.
 Proof using.
@@ -753,51 +897,6 @@ Proof using.
     + constructor 2 with (y := y); crush.
 Qed.
 Hint Resolve clos_refl_star.
-
-Lemma on_the_left :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property R1 R2 -> forall n, diamond_property (star R1 n) R2.
-Admitted.
-
-Lemma on_the_right :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property R1 R2 -> forall n, diamond_property R1 (star R2 n).
-Admitted.
-
-Lemma diamond_property_implies_mn_confluence :
-  forall {A : Type} (R : A -> A -> Prop),
-  diamond_property R R -> forall m n, diamond_property (star R m) (star R n).
-Admitted.
-
-Lemma clos_refl_trans_equiv {A : Type} R :
-  forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
-Admitted.
-Hint Resolve clos_refl_trans_equiv.
-
-Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
-  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
-Admitted.
-Hint Resolve snoc_clos_refl_trans_1n.
-
-Lemma crt_remove :
-  forall {A : Type} R x y,
-  clos_refl_trans_1n A R x y ->
-  clos_refl_trans (clos_refl_trans_1n A R) x y.
-Proof using.
-  intros.
-  induction H.
-  crush.
-  apply clos_refl_trans_equiv.
-  eapply snoc_clos_refl_trans_1n.
-  instantiate (1:=y).
-  constructor 2 with (y:=y).
-  apply clos_refl_trans_equiv.
-  apply CRTStep with (y0:=x) (x0:=x) (z0:=y) in H.
-  assumption.
-  crush.
-  crush.
-  crush.
-Qed.
 
 Lemma star_zero :
   forall {A : Type} (R : A -> A -> Prop) x y,
@@ -861,6 +960,70 @@ Proof using.
   instantiate (1:= y).
   assumption.
   assumption.
+Qed.
+
+Lemma on_the_left :
+  forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> forall n, diamond_property (star R1 n) R2.
+Proof.
+  intros A R1 R2 Hdiamond.
+  induction n.
+  - unfold diamond_property in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    eapply ex_intro.
+    split.
+    instantiate (1:=z).
+    eapply CRTStep.
+    instantiate (1:=y).
+    crush.
+    crush.
+    crush.
+  - unfold diamond_property in *.
+    intros x y z xy xz.
+    inversion xy; subst; clear xy.
+    remember H0 as H0'; clear HeqH0'.
+    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0'.
+    destruct H0'.
+    destruct H.
+    remember H1 as H1'; clear HeqH1'.
+    apply IHn with (x:=y0) (y:=y) (z:=z) in H1'.
+(* look at old diff to prove *)
+Admitted.
+
+Lemma on_the_right :
+  forall {A : Type} (R1 R2 : A -> A -> Prop),
+  diamond_property R1 R2 -> forall n, diamond_property R1 (star R2 n).
+Admitted.
+
+Lemma diamond_property_implies_mn_confluence :
+  forall {A : Type} (R : A -> A -> Prop),
+  diamond_property R R -> forall m n, diamond_property (star R m) (star R n).
+Admitted.
+
+Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
+  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
+Admitted.
+Hint Resolve snoc_clos_refl_trans_1n.
+
+Lemma crt_remove :
+  forall {A : Type} R x y,
+  clos_refl_trans_1n A R x y ->
+  clos_refl_trans (clos_refl_trans_1n A R) x y.
+Proof using.
+  intros.
+  induction H.
+  crush.
+  apply clos_refl_trans_equiv.
+  eapply snoc_clos_refl_trans_1n.
+  instantiate (1:=y).
+  constructor 2 with (y:=y).
+  apply clos_refl_trans_equiv.
+  apply CRTStep with (y0:=x) (x0:=x) (z0:=y) in H.
+  assumption.
+  crush.
+  crush.
+  crush.
 Qed.
 
 Theorem diamond_property_implies_confluence :
