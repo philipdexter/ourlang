@@ -182,6 +182,10 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs (t_app (t_abs x T t12) v2) ->
     value v2 ->
     c --> C b os rs (#[x:=v2]t12)
+| S_App1 : forall c b os rs t1 t1' t2,
+    c = C b os rs (t_app t1 t2) ->
+    C b os rs t1 --> C b os rs t1' ->
+    c --> C b os rs (t_app t1' t2)
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term,
     c = C [] os rs term ->
@@ -536,6 +540,7 @@ Proof using.
   - admit.
   - admit.
   (* S_App auto handled *)
+  (* S_App1 auto handled *)
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
@@ -706,6 +711,24 @@ Proof using.
     crush.
 Qed.
 
+Lemma frontend_only :
+  forall c b os rs t t',
+  c = C b os rs t ->
+  C b os rs t --> C b os rs t' ->
+  forall b' os' rs', C b' os' rs' t --> C b' os' rs' t'.
+Proof.
+  (* intros c b os rs t t' H Hred. *)
+  (* induction Hred; intros. *)
+  intros. inversion H0.
+  (* S_Emit *)
+  - inversion H4. rewrite <- List.app_nil_r in H9. apply List.app_inv_head in H9. crush.
+  (* S_App *)
+  - eapply S_App; crush.
+  (* S_App1 *)
+  - ssame.
+    eapply S_App1; crush.
+Admitted.
+
 Lemma local_confluence_p1 :
   forall cx cy cz,
   (* well_typed cx -> *)
@@ -716,12 +739,15 @@ Lemma local_confluence_p1 :
 Proof.
   (* intros cx cy cz WTcx cxcy cxcz. *)
   intros cx cy cz cxcy cxcz.
+  (* generalize dependent cxcz. *)
+  (* induction cxcy; intros cxcz. *)
   inversion cxcy.
   (* S_Emit *)
   - inversion cxcz; ssame.
     (* S_Emit *)
     + crush.
     (* S_App auto handled *)
+    (* S_App1 auto handled *)
     (* S_Empty *)
     + gotw (C [] (os' ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
       * eapply S_Empty; crush.
@@ -749,6 +775,26 @@ Proof.
       * crush.
   (* S_App *)
   - admit.
+  (* S_App1 *)
+  - inversion cxcz; ssame.
+    (* S_Emit auto handled *)
+    (* S_App *)
+    + admit.
+    (* S_App1 *)
+    + admit.
+    (* S_Empty *)
+    + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
+      * eapply S_Empty; crush.
+      * eapply S_App1; crush. eapply frontend_only with (c:=C [] (l ->> op :: os') rs0 t1); crush.
+      * crush.
+    (* S_First *)
+    + admit.
+    (* S_Add *)
+    + admit.
+    (* S_Inc *)
+    + admit.
+    (* S_Last *)
+    + admit.
   (* S_Empty *)
   - inversion cxcz; ssame.
     (* S_Emit *)
@@ -757,6 +803,8 @@ Proof.
       * eapply S_Empty; crush.
       * crush.
     (* S_App *)
+    + admit.
+    (* S_App1 *)
     + admit.
     (* S_Empty *)
     + crush.
@@ -775,6 +823,8 @@ Proof.
       * eapply S_First; crush.
       * crush.
     (* S_App *)
+    + admit.
+    (* S_App1 *)
     + admit.
     (* S_Empty *)
     + crush.
@@ -821,6 +871,8 @@ Proof.
       * eapply S_Add; crush.
       * crush.
     (* S_App *)
+    + admit.
+    (* S_App1 *)
     + admit.
     (* S_Empty *)
     + crush. inversion H4. crush.
@@ -882,6 +934,8 @@ Proof.
       * eapply S_Inc; crush.
       * crush.
     (* S_App *)
+    + admit.
+    (* S_App1 *)
     + admit.
     (* S_Empty *)
     + crush. destruct b1; crush.
@@ -1011,6 +1065,8 @@ Proof.
       * eapply S_Last; crush.
       * crush.
     (* S_App *)
+    + admit.
+    (* S_App1 *)
     + admit.
     (* S_Empty *)
     + crush. destruct b1; crush.
