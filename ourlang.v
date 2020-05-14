@@ -764,6 +764,7 @@ Proof.
           eapply S_Inc with (b1:=<< N k0 v0; [] >> :: s :: b1); crush.
         + crush.
       }
+    (* TODO here try to do target_same_or_different, see if we can get rid of the admits *)
     (* S_Inc *)
     + crush. inv H8.
       {
@@ -802,7 +803,7 @@ Proof.
       {
       destruct b2.
       (* b2 = [] *)
-      - right; eapply ex_intro; eapply ex_intro; intros.
+      - right.
         assert (op = inc ks) by admit.
         assert (n1 = N k v) by admit.
         crush.
@@ -826,18 +827,85 @@ Proof.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
-    +
-
-
-(*           * simpl in *. instantiate (1 := ...) *)
-
-(*             inversion H4. *)
-(*   C (s :: b1 ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) *)
-(*   C (<< N k v; [] >> :: b) os' (l ->>> k :: rs) *)
-
-(*       } *)
-
-
+    + subst.
+      {
+      destruct b1.
+      (* b1 = [] *)
+      - simpl in *. inv H6. right. eapply ex_intro. eapply ex_intro.
+        split; try split.
+        + instantiate (1:=C [<< n0; os1' ++ [l0 ->> op0] >>] os' (l ->>> final op :: rs0)).
+          eapply S_First; crush.
+        + instantiate (1:=C [<< n0; os1' ++ [l0 ->> op0] >>] os' (l ->>> final op :: rs0)).
+          simpl in *.
+          eapply S_Last with (b1:=[]) (os1':=os1' ++ [l0 ->> op0]); crush.
+        + crush.
+      (* b1 != [] *)
+      - simpl in *. inv H6. right. eapply ex_intro. eapply ex_intro.
+        split; try split.
+        + instantiate (1:=C (<< n0; os2 ++ [l0 ->> op0] >> :: b1 ++ [<< n1; os1' >>])  os' (l ->>> final op :: rs0)).
+          eapply S_First; crush.
+        + instantiate (1:=C (<< n0; os2 ++ [l0 ->> op0] >> :: b1 ++ [<< n1; os1' >>])  os' (l ->>> final op :: rs0)).
+          eapply S_Last with (b1:=<< n0; os2 ++ [l0 ->> op0] >> :: b1); crush.
+        + crush.
+      }
+    (* S_Add *)
+    + subst.
+      {
+      destruct b1.
+      (* b1 = [] *)
+      - simpl in *. inv H6. right. eapply ex_intro. eapply ex_intro.
+        split; try split.
+        + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l0 ->>> k0 :: l ->>> final op :: rs0)).
+          eapply S_Add with (b:=[<< n1; os1' >>]); crush.
+        + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l ->>> final op :: l0 ->>> k0 :: rs0)).
+          eapply S_Last with (b1:=[<< N k0 v; [] >>]); crush.
+        + crush.
+      (* b1 != [] *)
+      - simpl in *. inv H6. right. eapply ex_intro. eapply ex_intro.
+        split; try split.
+        + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l0 ->>> k0 :: l ->>> final op :: rs0)).
+          eapply S_Add; crush.
+        + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l ->>> final op :: l0 ->>> k0 :: rs0)).
+          eapply S_Last with (b1:=<< N k0 v; [] >> :: s :: b1); crush.
+        + crush.
+      }
+    (* S_Inc *)
+    + subst.
+      {
+      destruct b3. simpl in *.
+      (* b3 = [] *)
+      - simpl in *. inv H6. right.
+        assert (op = inc ks) by admit.
+        assert (n1 = N k0 v) by admit.
+        crush.
+      (* b3 != [] *)
+      - assert (exists b3a, b3 = b3a ++ [<< n1; l ->> op :: os1' >>]) by admit. destruct H.
+        rewrite H in *.
+        right.
+        eapply ex_intro; eapply ex_intro; intros.
+        split; try split.
+        + instantiate (1:=C (b2 ++ << N k0 (v + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: s :: x ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0)).
+          eapply S_Inc with (b1:=b2) (b2:=s :: x ++ [<< n1; os1' >>]); crush.
+          admit.
+        + instantiate (1:=C ((b2 ++ << N k0 (v + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: s :: x) ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0)).
+          eapply S_Last with (b1:=b2 ++ << N k0 (v + 1); l0 ->> inc (remove Nat.eq_dec k0 ks) :: os1'' >> :: s :: x); crush.
+        + crush.
+      }
+    (* S_Last *)
+    + subst.
+      {
+        left.
+        inv H6.
+        (* TODO before reduction prefix same as post reduction prefix *)
+        assert (b1=b2) by admit.
+        (* TODO if same size lists are equal, last element is same *)
+        assert (n1=n0) by admit.
+        assert (l=l0) by admit.
+        assert (op=op0) by admit.
+        assert (os1'=os1'0) by admit.
+        crush.
+      }
+Admitted.
 (* Qed. *)
 
 (* try to add a simple frontend with just an emit *)
@@ -1086,3 +1154,13 @@ Proof using.
   apply cequiv_sym.
   apply ourlang_local_confluence.
 Qed.
+
+(* proof structure taken from
+   https://coq.discourse.group/t/diamond-property-implies-confluence/620
+   but adapted for multi step and equiv relation.
+   Unfortunately, after changing them I could not get the proofs to go through. *)
+(* An out-of-coq proof can be found in
+   Huet, Gérard. "Confluent reductions: Abstract properties and applications
+   to term rewriting systems: Abstract properties and applications to term
+   rewriting systems." Journal of the ACM (JACM) 27.4 (1980): 797-821.
+*)
