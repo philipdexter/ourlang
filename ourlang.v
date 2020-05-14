@@ -178,6 +178,10 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs t_lop ->
     t_lop = t_emit (l ->> op) ->
     c --> C b (os ++ [l ->> op]) rs (t_result l)
+| S_App : forall c b os rs x T t12 v2,
+    c = C b os rs (t_app (t_abs x T t12) v2) ->
+    value v2 ->
+    c --> C b os rs (#[x:=v2]t12)
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term,
     c = C [] os rs term ->
@@ -531,6 +535,7 @@ Proof using.
   (* S_Emit *)
   - admit.
   - admit.
+  (* S_App auto handled *)
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
@@ -604,8 +609,7 @@ Proof using.
 Qed.
 Hint Rewrite cequiv_symmetric.
 
-(* put refl rule here instead of == *)
-(* no, put multi step here *)
+(* put multi step here instead of the == case *)
 Notation "cx -v cy" := (cx == cy \/ exists cu cv, cx --> cu /\ cy --> cv /\ cu == cv) (at level 40).
 Definition goes_to (c1 : config) (c2 : config) : Prop := c1 -v c2.
 
@@ -717,6 +721,7 @@ Proof.
   - inversion cxcz; ssame.
     (* S_Emit *)
     + crush.
+    (* S_App auto handled *)
     (* S_Empty *)
     + gotw (C [] (os' ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
       * eapply S_Empty; crush.
@@ -742,6 +747,8 @@ Proof.
       * eapply S_Last; crush.
       * eapply S_Emit; crush.
       * crush.
+  (* S_App *)
+  - admit.
   (* S_Empty *)
   - inversion cxcz; ssame.
     (* S_Emit *)
@@ -749,6 +756,8 @@ Proof.
       * eapply S_Emit; crush.
       * eapply S_Empty; crush.
       * crush.
+    (* S_App *)
+    + admit.
     (* S_Empty *)
     + crush.
     (* S_First auto handled *)
@@ -765,6 +774,8 @@ Proof.
       * eapply S_Emit; crush.
       * eapply S_First; crush.
       * crush.
+    (* S_App *)
+    + admit.
     (* S_Empty *)
     + crush.
     + crush.
@@ -809,6 +820,8 @@ Proof.
       * eapply S_Emit; crush.
       * eapply S_Add; crush.
       * crush.
+    (* S_App *)
+    + admit.
     (* S_Empty *)
     + crush. inversion H4. crush.
     (* S_First *)
@@ -868,6 +881,8 @@ Proof.
       * eapply S_Emit; crush.
       * eapply S_Inc; crush.
       * crush.
+    (* S_App *)
+    + admit.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
@@ -995,6 +1010,8 @@ Proof.
       * eapply S_Emit; crush.
       * eapply S_Last; crush.
       * crush.
+    (* S_App *)
+    + admit.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
