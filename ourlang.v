@@ -684,7 +684,7 @@ Lemma list_snoc :
   xs = x :: xs' ->
   exists y ys,
   xs = ys ++ [y].
-Proof.
+Proof using.
   intros A xs'.
   induction xs'; intros.
   - eapply ex_intro; eapply ex_intro.
@@ -916,38 +916,46 @@ Proof.
           eapply S_Inc with (b1:=<< N k0 v0; [] >> :: s :: b1); crush.
         + crush.
       }
-    (* TODO here try to do target_same_or_different, see if we can get rid of the admits *)
     (* S_Inc *)
-    + crush. inv H8.
+    + ssame.
       {
       apply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b3) (b4:=b4) (k:=k) (v:=v) (k':=k0) (v':=v0) (os:=l ->> inc ks :: os1'') in H0.
-      - destruct H0.
-        + left. crush. inv H4. crush.
-        + destruct H.
-          * inv H. inv H0. inv H.
-            rewrite H0 in cxcz.
-            assert (b3 = x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) by admit.
-            rewrite H in cxcz.
-            rewrite H0 in cxcy.
-            assert (b2 = x0 ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x1) by admit.
-            rewrite H1 in cxcy.
-            assert (b1 = x) by admit.
-            rewrite H2 in *.
-            assert (b4 = x1) by admit.
-            rewrite H3 in *.
-            right.
-            eapply ex_intro; eapply ex_intro.
-            {
-            split; try split.
-            - instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
-              eapply S_Inc; crush.
-            - instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
-              crush.
-              eapply S_Inc; crush.
-            - crush.
-            }
-          * inv H. inv H0. inv H.
-            admit.
+      - destruct H0; try destruct H.
+        (* Same target *)
+        + destruct H0; destruct H1; destruct H2; subst. inversion H3. subst. left. crush.
+        (* First first *)
+        + destruct H; destruct H; destruct H.
+          (* TODO need well typed property here to equiate b1 and x (if keys are same then know it's same node *)
+          assert (b1 = x) by admit.
+          rewrite H0 in *.
+          apply List.app_inv_head in H.
+          inversion H.
+          rewrite H2 in *.
+          assert (b3 = x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) by admit.
+          rewrite H1 in *.
+          assert (b4 = x1) by admit.
+          got.
+          * instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x1) os0 rs0 term1).
+            eapply S_Inc with (b1:=x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0); crush.
+          * instantiate (1:=C (x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x1) os0 rs0 term1).
+            eapply S_Inc with (b1:=x); crush.
+          * crush.
+        (* First second *)
+        + destruct H; destruct H; destruct H.
+          assert (b2 = x1) by admit.
+          rewrite H0 in *.
+          assert (b1 = x ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x0) by admit.
+          rewrite H1 in *.
+          assert (x = b3) by admit.
+          rewrite H2 in *.
+          assert (b4 = x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) by admit.
+          rewrite H3 in *.
+          got.
+          * instantiate (1:= C (b3 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
+            eapply S_Inc with (b1:=b3); crush.
+          * instantiate (1:= C ((b3 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0) ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
+            eapply S_Inc; crush.
+          * crush.
       - crush.
       }
     (* S_Last *)
@@ -956,22 +964,28 @@ Proof.
       destruct b2.
       (* b2 = [] *)
       - right.
-        assert (op = inc ks) by admit.
-        assert (n1 = N k v) by admit.
+        ssame.
+        apply List.app_inj_tail in H0.
+        destruct H0.
+        inversion H0.
         crush.
       (* b2 != [] *)
-      - assert (exists b2a, b2 = b2a ++ [<< n1; l0 ->> op :: os1'0 >>]) by admit. destruct H.
-        rewrite H in *.
-        right; eapply ex_intro; eapply ex_intro; intros.
-        split; try split.
-        (* TODO need snoc *)
-        (* check if empty if not the snoc *)
-        + simpl in *. instantiate (1:=C ((b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x) ++ [<<n1; os1'0>>]) os (l0 ->>> final op :: rs) term0).
-          eapply S_Last with (b1:=b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x); crush.
-        + simpl in *. instantiate (1:=C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: s :: x ++ [<<n1; os1'0>>]) os (l0 ->>> final op :: rs) term0).
-          inv H8.
-          eapply S_Inc with (b1:=b1) (b2:=s :: x ++ [<<n1; os1'0>>]); crush.
-          admit.
+      - ssame.
+        remember (s :: b2) as bend.
+        assert (exists y ys, bend = ys ++ [y]) by (apply list_snoc with (xs:=bend) (x:=s) (xs':=b2); crush).
+        destruct H; destruct H.
+        inv H.
+        rewrite H1 in *.
+        assert (b1 ++ << N k v; l ->> inc ks :: os1'' >> :: x0 ++ [x]=(b1 ++ << N k v; l ->> inc ks :: os1'' >> :: x0) ++ [x]) by crush.
+        rewrite H in H0.
+        apply List.app_inj_tail in H0.
+        destruct H0.
+        rewrite H2 in *.
+        right; eapply ex_intro; eapply ex_intro; split; try split.
+        + instantiate (1:=C ((b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ [<< n1;  os1'0 >>]) os0 (l0 ->>> final op :: rs0) term1).
+          eapply S_Last; crush.
+        + instantiate (1:=C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ [<< n1;  os1'0 >>]) os0 (l0 ->>> final op :: rs0) term1).
+          eapply S_Inc; crush.
         + crush.
       }
   (* S_Last *)
