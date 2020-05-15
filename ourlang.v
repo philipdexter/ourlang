@@ -1,3 +1,9 @@
+(* decision try to prove with all STAR but no equiv *)
+
+(* TODO post on coq board about proving the multi step modulo equiv version *)
+
+(* TODO try to remove the need for equiv, use sets as rstream *)
+(* TODO if we can prove the multi step , but not for equiv, then change to using sets for rstream *)
 
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
@@ -711,6 +717,20 @@ Proof using.
     crush.
 Qed.
 
+Lemma well_typed_backend_key_find :
+  forall c b os rs t b1 b2 b3 b4 v1 v2 os1 os2 k,
+  well_typed c ->
+  c = C b os rs t ->
+  b = b1 ++ <<N k v1; os1>> :: b2 ->
+  b = b3 ++ <<N k v2; os2>>:: b4 ->
+  b1 = b3 /\ b2 = b4 /\ v1 = v2 /\ os1 = os2.
+Proof.
+Admitted.
+
+(* TODO lemma where if [] [] rs t takes a step then [] [] (l ->>> r :: rs) t can take a step if l not in rs *)
+
+(* TODO change b' and os' to [] [] *)
+(* TODO no, wrong, it was to change those to [] [] in the reduction rules, not here *)
 Lemma frontend_only :
   forall c b os rs t t',
   c = C b os rs t ->
@@ -995,6 +1015,7 @@ Proof.
         (* First first *)
         + destruct H; destruct H; destruct H.
           (* TODO need well typed property here to equiate b1 and x (if keys are same then know it's same node *)
+          (* use that well_typed_backend_key_find thing to fill these assumptions *)
           assert (b1 = x) by admit.
           rewrite H0 in *.
           apply List.app_inv_head in H.
@@ -1158,11 +1179,24 @@ Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
 | CRTStep : forall x y, clos_refl_trans R x y -> forall z, R y z -> clos_refl_trans R x z.
 Hint Constructors clos_refl_trans.
 
+(* TODO change this to use star, not clos_refl_trans, then try to prove that this implies confluence *)
 Definition diamond_property {A : Type} (R1 R2 : A -> A -> Prop) :=
     forall x y z,
     R1 x y ->
     R2 x z ->
     exists w, clos_refl_trans R2 y w /\ clos_refl_trans R1 z w.
+
+Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
+| Zero : forall x, star R 0 x x
+| Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
+Hint Constructors star.
+
+Definition diamond_property' {A : Type} (R1 R2 : A -> A -> Prop) :=
+    forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists w, (exists n, star R2 n y w) /\ (exists m, star R1 m z w).
+
 
 Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop),
   diamond_property R1 R2 -> diamond_property R2 R1.
@@ -1178,11 +1212,6 @@ Proof using.
   assumption.
   assumption.
 Qed.
-
-Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
-| Zero : forall x, star R 0 x x
-| Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
-Hint Constructors star.
 
 Lemma clos_refl_trans_equiv {A : Type} R :
   forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
@@ -1215,6 +1244,19 @@ Lemma star_zero :
 Proof using.
   intros.
   inversion H; subst; clear H; crush.
+Qed.
+
+Lemma star_zero_in :
+  forall {A : Type} (R : A -> A -> Prop) n x y,
+  star (star R 0) n x y ->
+  x = y.
+Proof using.
+  intros A R.
+  induction n; intros.
+  apply star_zero in H; auto.
+  inv H.
+  apply IHn in H2; subst.
+  apply star_zero in H1; auto.
 Qed.
 
 Lemma star_trans :
@@ -1251,6 +1293,29 @@ Proof using.
     assumption.
     assumption.
 Qed.
+
+Lemma star_prod :
+  forall {A : Type} (R : A -> A -> Prop) m n x y,
+  star (star R m) n x y ->
+  star R (n*m) x y.
+Proof using.
+  intros A R.
+  induction m; induction n; intros; simpl in *.
+  - apply star_zero in H.
+    rewrite H.
+    apply Zero.
+  - assert (n * 0 = 0) by crush.
+    rewrite H0.
+    apply star_zero_in in H.
+    crush.
+  - apply star_zero in H; crush.
+  - inv H.
+    apply IHn in H2.
+    assert (S (m + n * S m) = (S m) + n * S m) by crush.
+    rewrite H.
+    eapply star_trans with (y1:=y0); crush.
+Qed.
+
 
 Lemma star_remove :
   forall {A : Type} (R : A -> A -> Prop) x y m,
@@ -1311,6 +1376,11 @@ Lemma diamond_property_implies_mn_confluence :
   diamond_property R R -> forall m n, diamond_property (star R m) (star R n).
 Admitted.
 
+Lemma diamond_property'_implies_mn_confluence :
+  forall {A : Type} (R : A -> A -> Prop),
+  diamond_property' R R -> forall m n, diamond_property' (star R m) (star R n).
+Admitted.
+
 Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
   forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
 Admitted.
@@ -1334,6 +1404,80 @@ Proof using.
   crush.
   crush.
   crush.
+Qed.
+
+Lemma clos_refl_trans_trans :
+  forall {A : Type} R x y z,
+  clos_refl_trans_1n A R x y ->
+  clos_refl_trans_1n A R y z ->
+  clos_refl_trans_1n A R x z.
+Proof using.
+  intros A R x y z xy.
+  induction xy; intros xz.
+  - assumption.
+  - crush.
+    constructor 2 with (y:=y); crush.
+Qed.
+
+Lemma double_clos_remove :
+  forall {A : Type} R x y,
+  clos_refl_trans_1n A (clos_refl_trans_1n A R) x y ->
+  clos_refl_trans_1n A R x y.
+Proof using.
+  intros A R x y xy.
+  induction xy.
+  - crush.
+  - apply clos_refl_trans_trans with (y0:=y); crush.
+Qed.
+
+Lemma double_clos :
+  forall {A : Type} R x y,
+  clos_refl_trans_1n A R x y ->
+  clos_refl_trans_1n A (clos_refl_trans_1n A R) x y.
+Proof using.
+  intros A R x y xy.
+  induction xy.
+  - crush.
+  - constructor 2 with (y:=y).
+    constructor 2 with (y:=y); crush.
+    crush.
+Qed.
+
+Theorem diamond_property'_implies_confluence :
+  forall {A : Type} (R : A -> A -> Prop),
+  diamond_property' R R -> diamond_property' (clos_refl_trans_1n A R) (clos_refl_trans_1n A R).
+Proof using.
+  unfold diamond_property' in *.
+  intros A R local_diamond x y z xy xz.
+  apply clos_refl_star in xy.
+  apply clos_refl_star in xz.
+  destruct xy as [n xy].
+  destruct xz as [m xz].
+  eapply diamond_property'_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
+  unfold diamond_property' in *.
+  eapply local_diamond with (z := z) in xy.
+  destruct xy as [v].
+  destruct H.
+  destruct H as [n' yv].
+  destruct H0 as [m' zv].
+  eapply ex_intro.
+  split.
+  apply clos_refl_star.
+  apply double_clos.
+  apply clos_refl_star.
+  eapply ex_intro.
+  instantiate (1:=v).
+  instantiate (1:=n'*m).
+  apply star_prod.
+  assumption.
+  apply clos_refl_star.
+  apply double_clos.
+  apply clos_refl_star.
+  eapply ex_intro.
+  instantiate (1:=m'*n).
+  apply star_prod.
+  assumption.
+  assumption.
 Qed.
 
 Theorem diamond_property_implies_confluence :
@@ -1401,7 +1545,7 @@ Qed.
    https://coq.discourse.group/t/diamond-property-implies-confluence/620
    but adapted for multi step and equiv relation.
    Unfortunately, after changing them I could not get the proofs to go through. *)
-(* An out-of-coq proof can be found in
+(* An out-of-coq proof can be found in the technical report, with inspiration from
    Huet, Gérard. "Confluent reductions: Abstract properties and applications
    to term rewriting systems: Abstract properties and applications to term
    rewriting systems." Journal of the ACM (JACM) 27.4 (1980): 797-821.
