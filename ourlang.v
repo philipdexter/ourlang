@@ -1183,31 +1183,10 @@ Proof.
   inversion cxcz; admit.
 Admitted.
 
-(* try to add a simple frontend with just an emit *)
-
-(* trying multi step with boring guy *)
-Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
-| CRTZero : forall x, clos_refl_trans R x x
-| CRTStep : forall x y, clos_refl_trans R x y -> forall z, R y z -> clos_refl_trans R x z.
-Hint Constructors clos_refl_trans.
-
-(* TODO change this to use star, not clos_refl_trans, then try to prove that this implies confluence *)
-Definition diamond_property {A : Type} (R1 R2 : A -> A -> Prop) :=
-    forall x y z,
-    R1 x y ->
-    R2 x z ->
-    exists w, clos_refl_trans R2 y w /\ clos_refl_trans R1 z w.
-
 Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
 | Zero : forall x, star R 0 x x
 | Step : forall x y, R x y -> forall n z, star R n y z -> star R (S n) x z.
 Hint Constructors star.
-
-Definition diamond_property' {A : Type} (R1 R2 : A -> A -> Prop) :=
-    forall x y z,
-    R1 x y ->
-    R2 x z ->
-    exists w, (exists n, star R2 n y w) /\ (exists m, star R1 m z w).
 
 Definition diamond_property'_modulo {A : Type} (R1 R2 sim : A -> A -> Prop) :=
     forall x y z,
@@ -1215,26 +1194,27 @@ Definition diamond_property'_modulo {A : Type} (R1 R2 sim : A -> A -> Prop) :=
     R2 x z ->
     exists u v, (exists n, star R2 n y u) /\ (exists m, star R1 m z v) /\ sim u v.
 
-
-Lemma diamond_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property R1 R2 -> diamond_property R2 R1.
+Lemma diamond'_modulo_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
+  (equiv A sim) ->
+  diamond_property'_modulo R1 R2 sim -> diamond_property'_modulo R2 R1 sim.
 Proof using.
-  intros.
-  unfold diamond_property in *.
-  intros x y z Rxy Rxz.
-  apply H with (x:=x) (y:=z) in Rxy; try assumption.
-  destruct Rxy; destruct H0.
-  eapply ex_intro.
-  split.
-  instantiate (1:=x0).
+  intros A R1 R2 sim Hequivsim H.
+  unfold diamond_property'_modulo in *.
+  intros x y z xy xz.
+  apply H with (x:=x) (y:=z) in xy; try assumption.
+  destruct xy.
+  destruct H0.
+  destruct H0.
+  destruct H1.
+  repeat (eapply ex_intro).
+  split; try split.
+  instantiate (1 := x1).
   assumption.
+  instantiate (1 := x0).
   assumption.
+  destruct Hequivsim.
+  crush.
 Qed.
-
-Lemma clos_refl_trans_equiv {A : Type} R :
-  forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
-Admitted.
-Hint Resolve clos_refl_trans_equiv.
 
 Lemma clos_refl_star : forall {A} R x y, clos_refl_trans_1n A R x y <-> exists n, star R n x y.
 Proof using.
@@ -1355,91 +1335,6 @@ Proof using.
     eapply star_trans with (y1:=y0); crush.
 Qed.
 
-
-Lemma star_remove :
-  forall {A : Type} (R : A -> A -> Prop) x y m,
-  clos_refl_trans (star R m) x y ->
-  clos_refl_trans R x y.
-Proof using.
-  intros A R x y m H.
-  induction H; crush.
-  apply clos_refl_trans_equiv.
-  apply clos_refl_star.
-  apply clos_refl_trans_equiv in IHclos_refl_trans.
-  apply clos_refl_star in IHclos_refl_trans.
-  destruct IHclos_refl_trans.
-  eapply ex_intro.
-  instantiate (1:=x0+m).
-  eapply star_trans.
-  instantiate (1:= y).
-  assumption.
-  assumption.
-Qed.
-
-Lemma on_the_left :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property R1 R2 -> forall n, diamond_property (star R1 n) R2.
-Proof.
-  intros A R1 R2 Hdiamond.
-  induction n.
-  - unfold diamond_property in *.
-    intros x y z xy xz.
-    inversion xy; subst; clear xy.
-    eapply ex_intro.
-    split.
-    instantiate (1:=z).
-    eapply CRTStep.
-    instantiate (1:=y).
-    crush.
-    crush.
-    crush.
-  - unfold diamond_property in *.
-    intros x y z xy xz.
-    inversion xy; subst; clear xy.
-    remember H0 as H0'; clear HeqH0'.
-    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0'.
-    destruct H0'.
-    destruct H.
-    remember H1 as H1'; clear HeqH1'.
-    apply IHn with (x:=y0) (y:=y) (z:=z) in H1'.
-(* look at old diff to prove *)
-Admitted.
-
-Lemma on_the_right :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property R1 R2 -> forall n, diamond_property R1 (star R2 n).
-Admitted.
-
-Lemma diamond_property_implies_mn_confluence :
-  forall {A : Type} (R : A -> A -> Prop),
-  diamond_property R R -> forall m n, diamond_property (star R m) (star R n).
-Admitted.
-
-Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
-  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
-Admitted.
-Hint Resolve snoc_clos_refl_trans_1n.
-
-Lemma crt_remove :
-  forall {A : Type} R x y,
-  clos_refl_trans_1n A R x y ->
-  clos_refl_trans (clos_refl_trans_1n A R) x y.
-Proof using.
-  intros.
-  induction H.
-  crush.
-  apply clos_refl_trans_equiv.
-  eapply snoc_clos_refl_trans_1n.
-  instantiate (1:=y).
-  constructor 2 with (y:=y).
-  apply clos_refl_trans_equiv.
-  apply CRTStep with (y0:=x) (x0:=x) (z0:=y) in H.
-  assumption.
-  crush.
-  crush.
-  crush.
-Qed.
-
 Lemma clos_refl_trans_trans :
   forall {A : Type} R x y z,
   clos_refl_trans_1n A R x y ->
@@ -1499,228 +1394,6 @@ Proof using.
     assumption.
     apply Zero.
 Qed.
-
-Axiom on_the_right' :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property' R1 R2 -> forall n, diamond_property' R1 (star R2 n).
-
-(* could try to see if it's easier when using clos_refl_trans instead of star *)
-
-Lemma on_the_left' :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property' R1 R2 -> forall n, diamond_property' (star R1 n) R2.
-Proof using.
-  intros A R1 R2 Hdiamond.
-  induction n.
-  - intros x y z xy xz.
-    inversion xy; subst; clear xy.
-    eapply ex_intro.
-    split.
-    instantiate (1 := z).
-    apply one_star in xz.
-    eapply ex_intro.
-    instantiate (1:=1).
-    assumption.
-    eapply ex_intro.
-    instantiate (1:=0).
-    crush.
-  - unfold diamond_property' in *.
-    intros x y z xy xz.
-    inversion xy; subst; clear xy.
-    remember H0. clear Heqr.
-    apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0.
-    destruct H0.
-    destruct H.
-    destruct H.
-    induction x1.
-    + apply star_zero in H.
-      subst.
-      apply ex_intro with (y).
-      split.
-      apply ex_intro with (0).
-      apply Zero.
-      destruct H0.
-      admit.
-    + destruct H0.
-      apply Hdiamond with (z:=z) in r.
-      destruct r.
-      destruct H2.
-      destruct H2.
-      destruct H3.
-      apply ex_intro with (x3).
-      split.
-      admit.
-      admit.
-      assumption.
-    + assumption.
-Admitted.
-(*     eapply Step. *)
-(*     instantiate (1:=x0). *)
-(*     assumption. *)
-(*     assumption. *)
-(*     assumption. *)
-(*     assumption. *)
-(* Qed. *)
-
-
-
-
-(* Proof using. *)
-(*   intros A R1 R2 Hdiamond. *)
-(*   induction n. *)
-(*   - intros x y z xy xz. *)
-(*     inversion xy; subst; clear xy. *)
-(*     eapply ex_intro. *)
-(*     split. *)
-(*     + instantiate (1 := z). *)
-(*       apply ex_intro with (1). *)
-(*       apply Step with (y0:=z). *)
-(*       assumption. *)
-(*       crush. *)
-(*     + apply ex_intro with (0). *)
-(*       crush. *)
-(*   - unfold diamond_property' in *. *)
-(*     intros x y z xy xz. *)
-(*     inversion xy; subst; clear xy. *)
-
-
-
-(*     remember H0. clear Heqr. *)
-(*     apply Hdiamond with (x:=x) (y:=y0) (z:=z) in H0. *)
-(*     inversion H0; subst; clear H0. *)
-(*     destruct H. destruct H. destruct H0. *)
-(*     rename H1 into stary0y. *)
-(*     apply IHn with (x:=y0) (y:=y) (z:=x0) in stary0y. *)
-(*     destruct stary0y. *)
-(*     destruct H1. *)
-(*     eapply ex_intro. *)
-(*     instantiate (1:=x3). *)
-(*     split. *)
-(*     eapply clos_refl_star. *)
-(*     eapply clos_refl_star in H1. *)
-(*     assumption. *)
-(*     admit. *)
-
-(*     admit. *)
-
-
-(*     destruct H. *)
-(*     destruct H. *)
-(*     induction x1; destruct H0; induction x1. *)
-(*     + eapply ex_intro. *)
-(*       apply star_zero in H. *)
-(*       apply star_zero in H0. *)
-(*       subst. *)
-(*       split. *)
-(*       * eapply ex_intro. *)
-(*         remember r. clear Heqr0. *)
-(*         apply Hdiamond with (z:=x0) in r. *)
-(*         destruct r. *)
-(*         destruct H. *)
-(*         destruct H. *)
-(*         destruct H0. *)
-(*         apply IHn *)
-
-
-(*     (* destruct H as [n' y0x0]. *) *)
-(*     rename H1 into stary0y. *)
-(*     apply IHn with (x:=y0) (y:=y) (z:=x0) in stary0y. *)
-(*     destruct stary0y. *)
-(*     destruct H1. *)
-(*     eapply ex_intro. *)
-(*     instantiate (1:=x2). *)
-(*     split. *)
-(*     eapply clos_refl_star. *)
-(*     eapply clos_refl_star in H1. *)
-(*     assumption. *)
-(*     admit. *)
-(* k *)
-(*     admit. *)
-
-(*     apply clos_refl_star. *)
-(*     apply clos_refl_star in H0. *)
-(*     apply clos_refl_star in H2. *)
-(*     apply clos_refl_trans_equiv in H2. *)
-(*     apply star_remove in H2. *)
-(*     apply star_remove. *)
-(*     apply clos_refl_trans_equiv. *)
-(*     assumption. *)
-
-(*     assumption. *)
-(*     eapply ex_intro. *)
-(*     eapply Step. *)
-(*     instantiate (1:=x0). *)
-(*     crush. *)
-(*     assumption. *)
-(*     assumption. *)
-(*     assumption. *)
-(*     assumption. *)
-
-(*   intros A R1 R2 dp1. *)
-(*   unfold diamond_property' in *. *)
-(*   induction n; intros. *)
-(*   - eapply ex_intro. *)
-(*     split. *)
-(*     + apply star_zero in H; subst. *)
-(*       eapply ex_intro. *)
-(*       instantiate (1:=z). *)
-(*       instantiate (1:=1). *)
-(*       eapply Step. *)
-(*       instantiate (1:=z). *)
-(*       assumption. *)
-(*       apply Zero. *)
-(*     + eapply ex_intro. *)
-(*       instantiate (1:=0). *)
-(*       apply Zero. *)
-(*   - inv H. *)
-(*     remember H3. clear Heqs. *)
-(*     remember H2. clear Heqr. *)
-(*     apply dp1 with (x:=x) (z:=z) in H2. *)
-(*     destruct H2. destruct H. destruct H. destruct H1. *)
-(*     destruct x1; destruct x2. *)
-(*     + apply star_zero in H; subst. *)
-(*       apply star_zero in H1; subst. *)
-
-(*     apply IHn with (z:=z) in H3. *)
-(*     destruct H3. *)
-(*     destruct H. *)
-(*     destruct H. *)
-(*     destruct H1. *)
-(*     apply dp1 with (x:=x) (z:=z) in H2. *)
-(*     eapply ex_intro. *)
-(*     split. *)
-(*     + eapply ex_intro. *)
-(*       instantiate (1:=x0). *)
-(*       instantiate (1:=x1). *)
-(*       assumption. *)
-(*     +  *)
-
-(*     remember H0. clear Heqr. *)
-(*     apply dp1 with (y:=y0) in H0. *)
-(*     destruct H0. *)
-(*     destruct H. *)
-(*     destruct H. *)
-(*     destruct H0. *)
-(*     apply IHn with (y:=) in r. *)
-(*     eapply ex_intro. *)
-(*     split. *)
-(*     * eapply ex_intro. *)
-
-(*     apply IHn with (z:=z) in H3. *)
-(*     destruct H3. *)
-(*     destruct H. *)
-(*     destruct H. *)
-(*     destruct H1. *)
-(*     eapply ex_intro. *)
-(*     instantiate (1:=x0). *)
-(*     split. *)
-(*     + eapply ex_intro. *)
-(*       instantiate (1:=x1). *)
-(*       assumption. *)
-(*     + apply clos_refl_star. *)
-(*       admit. *)
-(*       +  *)
-(* eapply ex_intro. *)
 
 Lemma on_the_left'_modulo :
   forall {A : Type} (R1 R2 sim : A -> A -> Prop),
@@ -1786,86 +1459,6 @@ Proof using.
   assumption.
 Qed.
 
-
-Lemma diamond_property'_implies_mn_confluence :
-  forall {A : Type} (R : A -> A -> Prop),
-  diamond_property' R R -> forall m n, diamond_property' (star R m) (star R n).
-Proof using.
-  intros A R diamond.
-  intros m n.
-  apply on_the_left' with (n0:=m) in diamond.
-  apply on_the_right' with (n0:=n) in diamond.
-  assumption.
-Qed.
-
-Theorem diamond_property'_implies_confluence :
-  forall {A : Type} (R : A -> A -> Prop),
-  diamond_property' R R -> diamond_property' (clos_refl_trans_1n A R) (clos_refl_trans_1n A R).
-Proof using.
-  unfold diamond_property' in *.
-  intros A R local_diamond x y z xy xz.
-  apply clos_refl_star in xy.
-  apply clos_refl_star in xz.
-  destruct xy as [n xy].
-  destruct xz as [m xz].
-  eapply diamond_property'_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
-  unfold diamond_property' in *.
-  eapply local_diamond with (z := z) in xy.
-  destruct xy as [v].
-  destruct H.
-  destruct H as [n' yv].
-  destruct H0 as [m' zv].
-  eapply ex_intro.
-  split.
-  apply clos_refl_star.
-  apply double_clos.
-  apply clos_refl_star.
-  eapply ex_intro.
-  instantiate (1:=v).
-  instantiate (1:=n'*m).
-  apply star_prod.
-  assumption.
-  apply clos_refl_star.
-  apply double_clos.
-  apply clos_refl_star.
-  eapply ex_intro.
-  instantiate (1:=m'*n).
-  apply star_prod.
-  assumption.
-  assumption.
-Qed.
-
-Theorem diamond_property_implies_confluence :
-  forall {A : Type} (R : A -> A -> Prop),
-  diamond_property R R -> diamond_property (clos_refl_trans_1n A R) (clos_refl_trans_1n A R).
-Proof using.
-  unfold diamond_property in *.
-  intros A R local_diamond x y z xy xz.
-  apply clos_refl_star in xy.
-  apply clos_refl_star in xz.
-  destruct xy as [n xy].
-  destruct xz as [m xz].
-  eapply diamond_property_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
-  unfold diamond_property in *.
-  eapply local_diamond with (z := z) in xy.
-  destruct xy as [v].
-  destruct H.
-  eapply ex_intro.
-  instantiate (1 := v).
-  split.
-  apply crt_remove.
-  apply star_remove in H.
-  apply star_remove in H0.
-  apply clos_refl_trans_equiv.
-  assumption.
-  apply crt_remove.
-  apply star_remove in H.
-  apply star_remove in H0.
-  apply clos_refl_trans_equiv.
-  assumption.
-  assumption.
-Qed.
-
 (*********************)
 
 Instance cequiv_reflective : Reflexive cequiv := cequiv_refl.
@@ -1876,164 +1469,10 @@ Program Instance cequiv_equivalence : Equivalence cequiv.
 (* define the relation over well-typed configurations *)
 
 
-(* ***** TRYING *)
-Definition diamond_property_modulo {A : Type}
-           (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop) :=
-forall x y z,
-    R1 x y ->
-    R2 x z ->
-    exists u v, (clos_refl_trans R2) y u /\ (clos_refl_trans R1) z v /\ sim u v.
-
-Lemma diamond_modulo_symmetric : forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
-  (equiv A sim) ->
-  diamond_property_modulo R1 R2 sim -> diamond_property_modulo R2 R1 sim.
-Proof using.
-  intros A R1 R2 sim Hequivsim H.
-  unfold diamond_property_modulo in *.
-  intros x y z xy xz.
-  apply H with (x:=x) (y:=z) in xy; try assumption.
-  destruct xy.
-  destruct H0.
-  destruct H0.
-  destruct H1.
-  repeat (eapply ex_intro).
-  split; try split.
-  instantiate (1 := x1).
-  assumption.
-  instantiate (1 := x0).
-  assumption.
-  destruct Hequivsim.
-  crush.
-Qed.
-Hint Resolve diamond_symmetric.
-
-Lemma on_the_left_modulo :
-  forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
-  diamond_property_modulo R1 R2 sim -> diamond_property_modulo (clos_refl_trans R1) R2 sim.
-Admitted.
-
-Lemma on_the_right_modulo :
-  forall {A : Type} (R1 R2 : A -> A -> Prop) (sim : A -> A -> Prop),
-  diamond_property_modulo R1 R2 sim -> diamond_property_modulo R1 (clos_refl_trans R2) sim.
-Admitted.
-
-Lemma diamond_property_modulo_implies_mn_confluence :
-  forall {A : Type} (R : A -> A -> Prop) (sim : A -> A -> Prop),
-  diamond_property_modulo R R sim -> diamond_property_modulo (clos_refl_trans R) (clos_refl_trans R) sim.
-Proof using.
-  intros A R sim diamond.
-  apply on_the_left_modulo in diamond.
-  apply on_the_right_modulo in diamond.
-  assumption.
-Qed.
-
-(* TODO if we're going to admit on the left and on the right anyways .... *)
-
-Theorem diamond_property_modulo_implies_confluence :
-  forall {A : Type} (R : A -> A -> Prop) (sim : A -> A -> Prop),
-  equiv A sim ->
-  diamond_property_modulo R R sim -> diamond_property_modulo (clos_refl_trans_1n A R) (clos_refl_trans_1n A R) sim.
-Proof using.
-  intros A R sim simequiv local_diamond.
-  destruct simequiv.
-  unfold diamond_property_modulo in *.
-  intros x y z xy xz.
-  apply clos_refl_trans_equiv in xy.
-  apply clos_refl_trans_equiv in xz.
-  induction xy; induction xz.
-  - eapply ex_intro.
-    eapply ex_intro.
-    instantiate (1:=x).
-    crush.
-  - 
-
-
-    (* maybe never mind this , just do the single non-equiv version with admitted left/right and move on,
-       oh and also need axiom saying config equal if rstream permutation *)
-
-  destruct xz as [xz].
-  eapply diamond_property_implies_mn_confluence with (m0:=n) (n0:=m) in local_diamond.
-  unfold diamond_property_modulo in *.
-  eapply local_diamond with (z := z) in xy.
-  - destruct xy as [xy|xy].
-
-    + right.
-      destruct xy as [u xy]. destruct xy as [v].
-      repeat (eapply ex_intro).
-      split ; try split.
-      * apply clos_refl_multi.
-        eapply ex_intro.
-        instantiate (1 := u).
-        instantiate (1 := m).
-        crush.
-      * apply clos_refl_multi.
-        eapply ex_intro.
-        instantiate (1 := v).
-        instantiate (1 := n).
-        crush.
-      * crush.
-  - crush.
-Qed.
-
-
-
-(* ************** TRYING *)
-
-Definition diamond_property'' {A : Type}
-           (R1 R2 : A -> A -> Prop)  :=
-forall x y z,
-    R1 x y ->
-    R2 x z ->
-    exists w, (clos_refl_trans R2) y w /\ (clos_refl_trans R1) z w.
-
-Lemma diamond_symmetric'' : forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property'' R1 R2 -> diamond_property'' R2 R1.
-Admitted.
-
-Lemma cons_clos_refl_trans {A : Type} (R : A -> A -> Prop) :
-  forall y z, clos_refl_trans R y z -> forall x, R x y -> clos_refl_trans R x z.
-Admitted.
-
-
-Lemma on_the_left'' :
-  forall {A : Type} (R1 R2 : A -> A -> Prop),
-  diamond_property'' R1 R2 -> diamond_property'' (clos_refl_trans R1) R2.
-Proof using.
-  intros A R1 R2 Hdiamond.
-  unfold diamond_property'' in *.
-  intros x y z xy xz.
-  generalize dependent z.
-  induction xy; intros.
-  eapply ex_intro.
-  split.
-  instantiate (1:=z).
-  apply CRTStep with (y:=x).
-  apply CRTZero.
-  assumption.
-  apply CRTZero.
-  remember xz.
-  clear Heqr.
-  apply IHxy in xz.
-  remember r.
-  clear Heqr0.
-  apply Hdiamond with (y:=z) in r.
-  destruct xz.
-  destruct r.
-  destruct H0.
-  destruct H1.
-  eapply ex_intro.
-  instantiate (1:=x1).
-  split.
-  assumption.
-  admit.
-  admit.
-Admitted.
-(* TODO introduce an axiom like we are equal as long as rstream is permutation *)
-
 Lemma ourlang_local_confluence :
-  diamond_property step step cequiv.
+  diamond_property'_modulo step step cequiv.
 Proof using.
-  unfold diamond_property_modulo.
+  unfold diamond_property'_modulo.
   intros.
   eapply local_confluence_p1 with (cx:=x) (cy:=y) (cz:=z); crush.
 Qed.
