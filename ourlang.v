@@ -296,6 +296,17 @@ List.concat (map (fun o => match o with
            end) os).
 Hint Unfold ostream_keys.
 
+Fixpoint term_keys (t : term) :=
+match t with
+| t_var _ => []
+| t_app t1 t2 => List.concat [term_keys t1; term_keys t2]
+| t_abs _ _ t => term_keys t
+| t_emit (_ ->> add k v) => [k]
+| t_emit (_ ->> inc _) => []
+| t_result _ => []
+end.
+Hint Unfold term_keys.
+
 Definition config_keys (c : config) :=
 match c with
 | C b os rs term => List.concat [backend_keys b; ostream_keys os]
@@ -311,6 +322,33 @@ Lemma ostream_labels_dist :
   ostream_labels (os1 ++ os2) = ostream_labels os1 ++ ostream_labels os2.
 Proof using.
  induction os1; intros; crush.
+Qed.
+Hint Rewrite ostream_labels_dist.
+
+Lemma cons_equal :
+  forall {A: Type} (x : A) y xs ys,
+  x = y ->
+  xs = ys ->
+  x :: xs = y :: ys.
+Proof using.
+  crush.
+Qed.
+
+Lemma ostream_keys_dist :
+  forall os1 os2,
+  ostream_keys (os1 ++ os2) = ostream_keys os1 ++ ostream_keys os2.
+Proof using.
+  induction os1; intros.
+  - crush.
+  - simpl.
+    destruct a; destruct o.
+    + unfold ostream_keys.
+      simpl.
+      apply IHos1.
+    + unfold ostream_keys.
+      simpl.
+      apply cons_equal; crush.
+      apply IHos1.
 Qed.
 Hint Rewrite ostream_labels_dist.
 
@@ -353,7 +391,7 @@ end.
 
 Definition config_labels (c : config) :=
 match c with
-| C b os rs term => List.concat [backend_labels b; ostream_labels os; rstream_labels rs] (* ; term_labels term] *)
+| C b os rs term => List.concat [backend_labels b; ostream_labels os; rstream_labels rs]
 end.
 Hint Unfold config_labels.
 
@@ -393,6 +431,65 @@ Proof using.
   induction xs; crush.
 Qed.
 Hint Resolve not_in_remove.
+
+Lemma distinct_rotate_back_one :
+  forall A (x : A) xs,
+  distinct (x :: xs) ->
+  distinct (xs ++ [x]).
+Proof using.
+  induction xs; intros; crush.
+  apply distinct_remove in H.
+  destruct H.
+  eapply distinct_many.
+  instantiate (1:=xs ++ [x]).
+  instantiate (1:=a).
+  crush.
+  crush.
+  apply List.in_app_iff in H1.
+  destruct H1.
+  - inv H; crush.
+  - inv H0; crush.
+  - apply IHxs.
+    apply List.not_in_cons in H0.
+    destruct H0.
+    inv H; crush.
+    eapply distinct_many.
+    instantiate (1:=xs').
+    instantiate (1:=x).
+    crush.
+    crush.
+    crush.
+Qed.
+
+Lemma distinct_rotate_back :
+  forall A (x : A) xs ys,
+  distinct (xs ++ x :: ys) ->
+  distinct (xs ++ ys ++ [x]).
+Proof using.
+  induction xs; intros.
+  - simpl.
+    apply distinct_rotate_back_one.
+    crush.
+  - simpl in *.
+    apply distinct_remove in H.
+    eapply distinct_many.
+    instantiate (1:=(xs ++ ys ++ [x])).
+    instantiate (1:=a).
+    crush.
+    destruct H.
+    crush.
+    assert (In a (xs ++ x :: ys)).
+    apply List.in_app_iff in H1.
+    destruct H1.
+    crush.
+    apply List.in_app_iff in H1.
+    destruct H1.
+    crush.
+    crush.
+    crush.
+    apply IHxs.
+    crush.
+Qed.
 
 Lemma distinct_rotate :
   forall A (x : A) xs ys,
@@ -523,6 +620,15 @@ Qed.
 Hint Rewrite List.app_assoc.
 Hint Rewrite List.app_nil_r.
 
+(* add fusion rule!! *)
+(* but maybe first change inc to accept a number to inc by *)
+
+Axiom fresh :
+  forall c b os rs l op,
+  c = C b os rs (t_emit (l ->> op)) ->
+  well_typed c ->
+  well_typed (C b (os ++ [l ->> op]) rs (t_result l)).
+
 Lemma well_typed_preservation :
   forall c1 c2,
   well_typed c1 ->
@@ -532,8 +638,8 @@ Proof using.
   intros.
   inversion H0; inversion H; eapply WT; crush.
   (* S_Emit *)
-  - admit.
-  - admit.
+  - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
+  - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
   (* S_App auto handled *)
   (* S_App1 auto handled *)
   (* S_Empty *)
@@ -567,7 +673,7 @@ Proof using.
     apply distinct_rotate.
     unfold backend_labels at 2.
     crush.
-Admitted.
+Qed.
 
 Reserved Notation "c1 '==' c2" (at level 40).
 Inductive cequiv : config -> config -> Prop :=
@@ -1579,12 +1685,16 @@ Instance cequiv_sym : Symmetric cequiv := cequiv_symmetric.
 Instance cequiv_transitive : Transitive cequiv := cequiv_trans.
 Program Instance cequiv_equivalence : Equivalence cequiv.
 
+Axiom start_at_well_typed :
+  forall c, well_typed c.
+
 Lemma dgcalc_local_confluence :
   diamond_property_modulo step step cequiv.
 Proof using.
   unfold diamond_property_modulo.
   intros.
   eapply local_confluence_p1 with (cx:=x) (cy:=y) (cz:=z); crush.
+  apply start_at_well_typed.
 Qed.
 
 Theorem dgcalc_confluence :
@@ -1601,6 +1711,9 @@ Proof using.
 Qed.
 
 
+(*
+could try proving this new style without the star, and with that diff definition of clos_trans_refl
+*)
 
 (*
 but first try to prove current version on pen/paper
