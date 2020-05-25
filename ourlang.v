@@ -184,7 +184,7 @@ Inductive step : config -> config -> Prop :=
     c --> C b os rs (#[x:=v2]t12)
 | S_App1 : forall c b os rs t1 t1' t2,
     c = C b os rs (t_app t1 t2) ->
-    C b os rs t1 --> C b os rs t1' ->
+    C [] [] rs t1 --> C [] [] rs t1' ->
     c --> C b os rs (t_app t1' t2)
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term,
@@ -682,7 +682,17 @@ Lemma target_same_or_different :
 Proof.
 Admitted.
 
-(* Need lemma saying if take a step HERE then all other nodes before and after are the same *)
+Lemma target_unique :
+  forall b b' b1 b2 b3 b4 k v os os0 rs0 t0,
+  well_typed (C b os0 rs0 t0) ->
+  b = b' ->
+  b = b1 ++ [<<N k v; os>>] ++ b2 ->
+  b' = b3 ++ [<<N k v; os>>] ++ b4 ->
+  (b1 = b3 /\ b2 = b4).
+Proof.
+Admitted.
+Hint Resolve target_unique.
+
 Ltac ssame := subst; match goal with
                      | [ H : C _ _ _ _ = C _ _ _ _ |- _ ] => inversion H
                      end; subst.
@@ -743,37 +753,57 @@ Lemma well_typed_backend_key_find :
 Proof.
 Admitted.
 
-(* TODO lemma where if [] [] rs t takes a step then [] [] (l ->>> r :: rs) t can take a step if l not in rs *)
-
-(* TODO change b' and os' to [] [] *)
-(* TODO no, wrong, it was to change those to [] [] in the reduction rules, not here *)
-Lemma frontend_only :
-  forall c b os rs t t',
-  c = C b os rs t ->
-  C b os rs t --> C b os rs t' ->
-  forall b' os' rs', C b' os' rs' t --> C b' os' rs' t'.
+Lemma frontend_rstream_extension :
+  forall rs t t' lr,
+  C [] [] rs t --> C [] [] rs t' ->
+  C [] [] (lr :: rs) t --> C [] [] (lr :: rs) t'.
 Proof.
-  (* intros c b os rs t t' H Hred. *)
-  (* induction Hred; intros. *)
-  intros. inversion H0.
-  (* S_Emit *)
-  - inversion H4. rewrite <- List.app_nil_r in H9. apply List.app_inv_head in H9. crush.
-  (* S_App *)
-  - eapply S_App; crush.
-  (* S_App1 *)
-  - ssame.
-    eapply S_App1; crush.
+  intros rs t t' lr H.
+  inversion H; ssame.
+  - destruct os.
+    + inversion H1.
+    + inversion H1.
 Admitted.
+Hint Resolve frontend_rstream_extension.
+
+Lemma frontend_no_value :
+  forall rs t t' s ty te,
+  C [] [] rs t --> C [] [] rs t' ->
+  ~ (t =  t_abs s ty te).
+Proof using.
+  intros rs t t' s ty te H.
+  inversion H; ssame.
+  - crush.
+  - crush.
+  - crush.
+  - destruct b1; crush.
+  - destruct b1; crush.
+Qed.
+Hint Resolve frontend_no_value.
+
+Lemma frontend_deterministic :
+  forall rs t t' t'',
+  C [] [] rs t --> C [] [] rs t' ->
+  C [] [] rs t --> C [] [] rs t'' ->
+  t' = t''.
+Proof.
+  intros rs t t' t'' H1 H2.
+  inversion H1; inversion H2; subst.
+  - destruct os.
+    + inversion H0.
+    + inversion H0.
+Admitted.
+Hint Resolve frontend_deterministic.
 
 Lemma local_confluence_p1 :
   forall cx cy cz,
-  (* well_typed cx -> *)
+  well_typed cx ->
   cx --> cy ->
   cx --> cz ->
   (cy -v cz).
-Proof.
+Proof using.
   (* intros cx cy cz WTcx cxcy cxcz. *)
-  intros cx cy cz cxcy cxcz.
+  intros cx cy cz WT cxcy cxcz.
   (* generalize dependent cxcz. *)
   (* induction cxcy; intros cxcz. *)
   inversion cxcy.
@@ -809,27 +839,69 @@ Proof.
       * eapply S_Emit; crush.
       * crush.
   (* S_App *)
-  - admit.
+  - inversion cxcz; ssame.
+    (* S_Emit auto handled *)
+    (* S_App *)
+    + crush.
+    (* S_App1 *)
+    + apply frontend_no_value with (s:=x) (ty:=T) (te:=t12) in H4; crush.
+    (* S_Empty *)
+    + gotw (C [] os' (l ->>> final op :: rs0) (#[ x := v2] t12)).
+      * eapply S_Empty; crush.
+      * eapply S_App; crush.
+      * crush.
+    (* S_First *)
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (#[ x := v2] t12)).
+      * eapply S_First; crush.
+      * eapply S_App; crush.
+      * crush.
+    (* S_Add *)
+    + gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (#[ x := v2] t12)).
+      * eapply S_Add; crush.
+      * eapply S_App; crush.
+      * crush.
+    (* S_Inc *)
+    + gotw (C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (#[ x := v2] t12)).
+      * eapply S_Inc; crush.
+      * eapply S_App; crush.
+      * crush.
+    (* S_Last *)
+    + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (#[ x := v2] t12)).
+      * eapply S_Last; crush.
+      * eapply S_App; crush.
+      * crush.
   (* S_App1 *)
   - inversion cxcz; ssame.
     (* S_Emit auto handled *)
     (* S_App *)
-    + admit.
+    + apply frontend_no_value with (s:=x) (ty:=T) (te:=t12) in H0; crush.
     (* S_App1 *)
-    + admit.
+    + apply frontend_deterministic with (t':=t1'0) in H0; crush.
     (* S_Empty *)
     + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
       * eapply S_Empty; crush.
-      * eapply S_App1; crush. eapply frontend_only with (c:=C [] (l ->> op :: os') rs0 t1); crush.
+      * eapply S_App1; crush.
       * crush.
     (* S_First *)
-    + admit.
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app t1' t2)).
+      * eapply S_First; crush.
+      * eapply S_App1; crush.
+      * crush.
     (* S_Add *)
-    + admit.
+    + gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app t1' t2)).
+      * eapply S_Add; crush.
+      * eapply S_App1; crush.
+      * crush.
     (* S_Inc *)
-    + admit.
+    + gotw (C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app t1' t2)).
+      * eapply S_Inc; crush.
+      * eapply S_App1; crush.
+      * crush.
     (* S_Last *)
-    + admit.
+    + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app t1' t2)).
+      * eapply S_Last; crush.
+      * eapply S_App1; crush.
+      * crush.
   (* S_Empty *)
   - inversion cxcz; ssame.
     (* S_Emit *)
@@ -838,9 +910,15 @@ Proof.
       * eapply S_Empty; crush.
       * crush.
     (* S_App *)
-    + admit.
+    + gotw (C [] os' (l ->>> final op :: rs0) (#[ x := v2] t12)).
+      * eapply S_App; crush.
+      * eapply S_Empty; crush.
+      * crush.
     (* S_App1 *)
-    + admit.
+    + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
+      * eapply S_App1; crush.
+      * eapply S_Empty; crush.
+      * crush.
     (* S_Empty *)
     + crush.
     (* S_First auto handled *)
@@ -858,9 +936,15 @@ Proof.
       * eapply S_First; crush.
       * crush.
     (* S_App *)
-    + admit.
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (#[ x := v2] t12)).
+      * eapply S_App; crush.
+      * eapply S_First; crush.
+      * crush.
     (* S_App1 *)
-    + admit.
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app t1' t2)).
+      * eapply S_App1; crush.
+      * eapply S_First; crush.
+      * crush.
     (* S_Empty *)
     + crush.
     + crush.
@@ -906,9 +990,15 @@ Proof.
       * eapply S_Add; crush.
       * crush.
     (* S_App *)
-    + admit.
+    + ssame. gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (#[ x := v2] t12)).
+      * eapply S_App; crush.
+      * eapply S_Add; crush.
+      * crush.
     (* S_App1 *)
-    + admit.
+    + ssame. gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app t1' t2)).
+      * eapply S_App1; crush.
+      * eapply S_Add; crush.
+      * crush.
     (* S_Empty *)
     + crush. inversion H4. crush.
     (* S_First *)
@@ -969,9 +1059,15 @@ Proof.
       * eapply S_Inc; crush.
       * crush.
     (* S_App *)
-    + admit.
+    + ssame. gotw (C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (#[ x := v2] t12)).
+      * eapply S_App; crush.
+      * eapply S_Inc; crush.
+      * crush.
     (* S_App1 *)
-    + admit.
+    + ssame. gotw (C (b1 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app t1' t2)).
+      * eapply S_App1; crush.
+      * eapply S_Inc; crush.
+      * crush.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
@@ -1031,14 +1127,28 @@ Proof.
         + destruct H; destruct H; destruct H.
           (* TODO need well typed property here to equiate b1 and x (if keys are same then know it's same node *)
           (* use that well_typed_backend_key_find thing to fill these assumptions *)
-          assert (b1 = x) by admit.
+          (* apply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc ks :: os1'' >> :: b2) in H. *)
+          (* inversion H. *)
+          (* subst. *)
+          assert (b1 = x).
+          {
+            apply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc ks :: os1'' >> :: b2) in H; crush.
+          }
           rewrite H0 in *.
           apply List.app_inv_head in H.
           inversion H.
           rewrite H2 in *.
-          assert (b3 = x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) by admit.
+          assert (b3 = x ++ << N k v; l ->> inc ks :: os1'' >> :: x0).
+          {
+            inversion H8.
+            apply target_unique with (b1:=x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) (b2:=x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc ks :: os1'' >> :: b2) in H3; crush.
+          }
           rewrite H1 in *.
-          assert (b4 = x1) by admit.
+          assert (b4 = x1).
+          {
+            inversion H8.
+            apply target_unique with (b1:=x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) (b2:=x1) (b3:=x ++ << N k v; l ->> inc ks :: os1'' >> :: x0) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc ks :: os1'' >> :: b2) in H4; crush.
+          }
           got.
           * instantiate (1:=C ((x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x1) os0 rs0 term1).
             one_step; eapply S_Inc with (b1:=x ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x0); crush.
@@ -1047,20 +1157,16 @@ Proof.
           * crush.
         (* First second *)
         + destruct H; destruct H; destruct H.
-          assert (b2 = x1) by admit.
-          rewrite H0 in *.
-          assert (b1 = x ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x0) by admit.
-          rewrite H1 in *.
-          assert (x = b3) by admit.
-          rewrite H2 in *.
-          assert (b4 = x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) by admit.
-          rewrite H3 in *.
+          apply target_unique with (os:=l ->> inc ks :: os1'') (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x0) (b4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc ks :: os1'' >> :: b2) in H; crush.
           got.
-          * instantiate (1:= C (b3 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
-            one_step; eapply S_Inc with (b1:=b3); crush.
+          * instantiate (1:= C (x ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0 ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
+            one_step; eapply S_Inc; crush.
           * instantiate (1:= C ((b3 ++ << N k0 (v0 + 1); l0 ->> inc (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0) ++ << N k (v + 1); l ->> inc (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
             one_step; eapply S_Inc; crush.
-          * crush.
+            inversion H8.
+            apply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) in H0; crush.
+          * inversion H8.
+            apply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k0 v0; l0 ->> inc ks0 :: os1''0 >> :: x0 ++ << N k v; l ->> inc ks :: os1'' >> :: x1) in H0; crush.
       - crush.
       }
     (* S_Last *)
@@ -1100,9 +1206,15 @@ Proof.
       * eapply S_Last; crush.
       * crush.
     (* S_App *)
-    + admit.
+    + ssame. gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (#[ x := v2] t12)).
+      * eapply S_App; crush.
+      * eapply S_Last; crush.
+      * crush.
     (* S_App1 *)
-    + admit.
+    + ssame. gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app t1' t2)).
+      * eapply S_App1; crush.
+      * eapply S_Last; crush.
+      * crush.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
@@ -1182,8 +1294,7 @@ Proof.
       }
     (* S_Last *)
     + ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
-Admitted.
-(* Qed. *)
+Qed.
 
 Lemma local_confluence_p2 :
   forall cx cy cz,
@@ -1196,6 +1307,9 @@ Proof.
   inversion cxcz; admit.
 Admitted.
 
+(* TODO need to start x and x' as sim, not x and x as equal *)
+(* if we do that, then remove multi step (enhance equivalence a bit)
+   then we have a chance of matching the paper version *)
 Definition diamond_property_modulo {A : Type} (R1 R2 sim : A -> A -> Prop) :=
     forall x y z,
     R1 x y ->
@@ -1485,3 +1599,80 @@ Proof using.
   apply cequiv_sym.
   apply dgcalc_local_confluence.
 Qed.
+
+
+
+(*
+but first try to prove current version on pen/paper
+
+long term we might not need multi step if we can have some smarter form of equivalence,
+then maybe we could get rid of admits since i think we can prove
+1) single step
+2) single step sim (??)
+but not
+3) multi step
+4) multi step sim
+*)
+
+Definition diamond_property' {A : Type} (R1 R2 : A -> A -> Prop) :=
+    forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists w, (exists n, star R2 n y w) /\ (exists m, star R1 m z w).
+
+(* TODO might need normal form lemma, then we can say they meet up at the normal form *)
+Lemma on_the_left' :
+  forall {A : Type} (R : A -> A -> Prop),
+  (forall x y z, R x y -> R x z -> exists w, (exists n, star R n y w) /\ (exists m, star R m z w)) ->
+  forall o,
+  (forall x y z, star R o x y -> R x z -> exists w, (exists n, star R n y w) /\ (exists m, star R m z w)).
+Proof using.
+  intros A R H o.
+  induction o; intros x y z xy xz.
+  - apply star_zero in xy; subst.
+    apply ex_intro with (z).
+    split.
+    apply ex_intro with (1).
+    apply one_star.
+    assumption.
+    apply ex_intro with (0).
+    crush.
+  - inv xy.
+    rename y0 into x'.
+    rename H1 into xx'.
+    rename H2 into x'y.
+
+
+    inv xy.
+    assert ({y0 = z} + {y0 <> z}) by admit.
+    + destruct H0; subst.
+      * apply ex_intro with (y).
+        split.
+        apply ex_intro with (0); crush.
+        apply ex_intro with (o); crush.
+      * remember xz as xz'. clear Heqxz'.
+        apply H with (y:=y0) in xz.
+        destruct xz.
+        destruct H0.
+        destruct H0.
+        destruct H3.
+        {
+          destruct x1.
+          - apply star_zero in H0; subst.
+        }
+
+apply IHo with (z:=z) in H2.
+
+    remember xz. clear Heqr.
+    apply H with (z:=y0) in xz.
+    destruct xz.
+    destruct H0.
+    destruct H0.
+    destruct H3.
+    apply IHo with () in H2.
+
+    apply IHo with (z:=z) in H2.
+
+    apply ex_intro with ().
+
+  diamond_property' R1 R2 -> forall n, diamond_property' (star R1 n) R2 sim.
