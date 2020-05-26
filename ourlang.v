@@ -93,8 +93,6 @@ Hint Constructors term.
 Inductive value : term -> Prop :=
 | v_abs : forall x T t,
           value (t_abs x T t)
-| v_label : forall label,
-            value label
 | v_result : forall result,
              value (t_result result).
 Hint Constructors value.
@@ -188,6 +186,11 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs (t_app t1 t2) ->
     C [] [] rs t1 --> C [] [] rs t1' ->
     c --> C b os rs (t_app t1' t2)
+| S_App2 : forall c b os rs v1 t2' t2,
+    c = C b os rs (t_app v1 t2) ->
+    value v1 ->
+    C [] [] rs t2 --> C [] [] rs t2' ->
+    c --> C b os rs (t_app v1 t2')
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term,
     c = C [] os rs term ->
@@ -665,6 +668,7 @@ Proof using.
   - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
   (* S_App auto handled *)
   (* S_App1 auto handled *)
+  (* S_App2 auto handled *)
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
@@ -972,11 +976,29 @@ Proof using.
   - crush.
   - crush.
   - crush.
+  - crush.
   - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
 Qed.
 Hint Resolve frontend_no_value.
+
+Lemma frontend_no_value' :
+  forall rs t t',
+  C [] [] rs t --> C [] [] rs t' ->
+  ~ (value t).
+Proof using.
+  intros rs t t' H.
+  inversion H; ssame.
+  - destruct os; crush.
+  - unfold not; intros. inversion H0.
+  - unfold not; intros. inversion H0.
+  - unfold not; intros. inversion H0.
+  - destruct b1; crush.
+  - destruct b1; crush.
+  - destruct b1; crush.
+Qed.
+Hint Resolve frontend_no_value'.
 
 Lemma frontend_deterministic :
   forall rs t t' t'',
@@ -1010,6 +1032,7 @@ Proof using.
     + crush.
     (* S_App auto handled *)
     (* S_App1 auto handled *)
+    (* S_App2 auto handled *)
     (* S_Empty *)
     + gotw (C [] (os' ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
       * eapply S_Empty; crush.
@@ -1047,6 +1070,8 @@ Proof using.
     + crush.
     (* S_App1 *)
     + apply frontend_no_value with (s:=x) (ty:=T) (te:=t12) in H4; crush.
+    (* S_App2 *)
+    + apply frontend_no_value' in H5; crush.
     (* S_Empty *)
     + gotw (C [] os' (l ->>> final op :: rs0) (#[ x := v2] t12)).
       * eapply S_Empty; crush.
@@ -1084,6 +1109,8 @@ Proof using.
     + apply frontend_no_value with (s:=x) (ty:=T) (te:=t12) in H0; crush.
     (* S_App1 *)
     + apply frontend_deterministic with (t':=t1'0) in H0; crush.
+    (* S_App2 *)
+    + apply frontend_no_value' in H0; crush.
     (* S_Empty *)
     + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
       * eapply S_Empty; crush.
@@ -1114,6 +1141,45 @@ Proof using.
       * eapply S_FuseInc; crush.
       * eapply S_App1; crush.
       * crush.
+  (* S_App2 *)
+  - inversion cxcz; ssame.
+    (* S_Emit auto handled *)
+    (* S_App *)
+    + apply frontend_no_value' in H1; crush.
+    (* S_App1 *)
+    + apply frontend_no_value' in H5; crush.
+    (* S_App2 *)
+    + apply frontend_deterministic with (t':=t2'0) in H1; crush.
+    (* S_Empty *)
+    + gotw (C [] os' (l ->>> final op :: rs0) (t_app v1 t2')).
+      * eapply S_Empty; crush.
+      * eapply S_App2; crush.
+      * crush.
+    (* S_First *)
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app v1 t2')).
+      * eapply S_First; crush.
+      * eapply S_App2; crush.
+      * crush.
+    (* S_Add *)
+    + gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app v1 t2')).
+      * eapply S_Add; crush.
+      * eapply S_App2; crush.
+      * crush.
+    (* S_Inc *)
+    + gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app v1 t2')).
+      * eapply S_Inc; crush.
+      * eapply S_App2; crush.
+      * crush.
+    (* S_Last *)
+    + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app v1 t2')).
+      * eapply S_Last; crush.
+      * eapply S_App2; crush.
+      * crush.
+    (* S_FuseInc *)
+    + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_app v1 t2')).
+      * eapply S_FuseInc; crush.
+      * eapply S_App2; crush.
+      * crush.
   (* S_Empty *)
   - inversion cxcz; ssame.
     (* S_Emit *)
@@ -1129,6 +1195,11 @@ Proof using.
     (* S_App1 *)
     + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
       * eapply S_App1; crush.
+      * eapply S_Empty; crush.
+      * crush.
+    (* S_App2 *)
+    + gotw (C [] os' (l ->>> final op :: rs0) (t_app v1 t2')).
+      * eapply S_App2; crush.
       * eapply S_Empty; crush.
       * crush.
     (* S_Empty *)
@@ -1157,6 +1228,11 @@ Proof using.
     (* S_App1 *)
     + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app t1' t2)).
       * eapply S_App1; crush.
+      * eapply S_First; crush.
+      * crush.
+    (* S_App2 *)
+    + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app v1 t2')).
+      * eapply S_App2; crush.
       * eapply S_First; crush.
       * crush.
     (* S_Empty *)
@@ -1223,6 +1299,11 @@ Proof using.
     (* S_App1 *)
     + ssame. gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app t1' t2)).
       * eapply S_App1; crush.
+      * eapply S_Add; crush.
+      * crush.
+    (* S_App2 *)
+    + ssame. gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app v1 t2')).
+      * eapply S_App2; crush.
       * eapply S_Add; crush.
       * crush.
     (* S_Empty *)
@@ -1300,6 +1381,11 @@ Proof using.
     (* S_App1 *)
     + ssame. gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app t1' t2)).
       * eapply S_App1; crush.
+      * eapply S_Inc; crush.
+      * crush.
+    (* S_App2 *)
+    + ssame. gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app v1 t2')).
+      * eapply S_App2; crush.
       * eapply S_Inc; crush.
       * crush.
     (* S_Empty *)
@@ -1447,6 +1533,11 @@ Proof using.
       * eapply S_App1; crush.
       * eapply S_Last; crush.
       * crush.
+    (* S_App2 *)
+    + ssame. gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app v1 t2')).
+      * eapply S_App2; crush.
+      * eapply S_Last; crush.
+      * crush.
     (* S_Empty *)
     + crush. destruct b1; crush.
     (* S_First *)
@@ -1589,6 +1680,11 @@ Proof using.
     (* S_App1 *)
     + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_app t1' t2)).
       * eapply S_App1; crush.
+      * eapply S_FuseInc; crush.
+      * crush.
+    (* S_App2 *)
+    + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_app v1 t2')).
+      * eapply S_App2; crush.
       * eapply S_FuseInc; crush.
       * crush.
     (* S_Empty *)
