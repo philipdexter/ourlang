@@ -1624,10 +1624,11 @@ Proof using.
             destruct os1.
             (* os1 = [] *)
             - simpl in *.
-              (* need change in equivalence *)
+              inv H4.
+              (* need change in equivalence OR need prop rule and multi step to prop or last out of way and realiz the other*)
+              (* C (b3 ++ << N k v           ; l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b4) os0 (l' ->>> 0 :: rs0) term1 *)
+              (* C (b3 ++ << N k (v + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k ks0) :: l' ->> inc incby' ks0 :: os2 >> :: b4) os0 rs0 term1 *)
               admit.
-              (* C (b3 ++ << N k v           ; l ->> inc (incby + incby') ks :: os2 >> :: b4) os0 (l' ->>> 0 :: rs0) term1 *)
-              (* C (b3 ++ << N k (v + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k ks0) :: os1'' >> :: b4) os0 rs0 term1 *)
             (* os1 != [] *)
             - gotw (C (b3 ++ << N k (v + incby0); (l0 ->> inc incby0 (remove Nat.eq_dec k ks0) :: os1) ++ l ->> inc (incby + incby') ks :: os2 >> :: b4) os0 (l' ->>> final (inc incby' ks) :: rs0) term1).
               + inv H4. eapply S_Inc; crush.
