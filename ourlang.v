@@ -1596,6 +1596,69 @@ Proof using.
 Qed.
 Hint Resolve lc_fuseinc.
 
+Lemma lc_last :
+  forall cx cy cz b1 n1 os rs term0 os1' l op,
+  well_typed cx ->
+  cx = C (b1 ++ [<< n1; l ->> op :: os1' >>]) os rs term0 ->
+  cy = C (b1 ++ [<< n1; os1' >>]) os (l ->>> final op :: rs) term0 ->
+  ~ In (getKey n1) (target op) ->
+  cx --> cy ->
+  cx --> cz ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b1 n1 os rs term0 os1' l op WT Heqcx Heqcy H3 cxcy cxcz.
+  remember (getKey n1) as k.
+  rename Heqk into H2.
+  remember (l ->> op :: os1') as os1.
+  rename Heqos1 into H1.
+  remember (b1 ++ [<<n1; os1>>]) as b.
+  rename Heqb into H0.
+  rename Heqcx into H.
+  remember cx as c.
+  rename Heqc into H4.
+  rename Heqcy into H5.
+  inversion cxcz.
+  (* S_Emit *)
+  + subst; eauto.
+  (* S_App *)
+  + eauto.
+  (* S_App1 *)
+  + eauto.
+  (* S_App2 *)
+  + eauto.
+  (* S_Empty *)
+  + crush. destruct b1; crush.
+  (* S_First *)
+  + subst; eauto.
+  (* S_Add *)
+  + subst.
+    {
+    destruct b1.
+    (* b1 = [] *)
+    - simpl in *. inv H6. eapply ex_intro. eapply ex_intro.
+      split; try split.
+      + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l0 ->>> k0 :: l ->>> final op :: rs0) term1).
+        one_step; eapply S_Add with (b:=[<< n1; os1' >>]); crush.
+      + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l ->>> final op :: l0 ->>> k0 :: rs0) term1).
+        one_step; eapply S_Last with (b1:=[<< N k0 v; [] >>]); crush.
+      + crush.
+    (* b1 != [] *)
+    - simpl in *. inv H6. eapply ex_intro. eapply ex_intro.
+      split; try split.
+      + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l0 ->>> k0 :: l ->>> final op :: rs0) term1).
+        one_step; eapply S_Add; crush.
+      + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l ->>> final op :: l0 ->>> k0 :: rs0) term1).
+        one_step; eapply S_Last with (b1:=<< N k0 v; [] >> :: s :: b1); crush.
+      + crush.
+    }
+  (* S_Inc *)
+  + subst; eauto.
+  (* S_Last *)
+  + ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
+  (* S_FuseInc *)
+  + subst; eauto.
+Qed.
+Hint Resolve lc_last.
 
 Lemma local_confluence_p1 :
   forall cx cy cz,
@@ -1632,7 +1695,7 @@ Proof using.
     (* S_Inc *)
     + eauto.
     (* S_Last *)
-    + destruct b1; crush.
+    + eauto.
     (* S_FuseInc *)
     + eauto.
   (* S_First *)
@@ -1656,73 +1719,13 @@ Proof using.
     (* S_Inc *)
     + subst; eauto.
     (* S_Last *)
-    + crush.
-      {
-      destruct b1; eapply ex_intro; eapply ex_intro; intros.
-      (* b1 = [] *)
-      - split; try split.
-        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs) term0).
-          inversion H4.
-          one_step; eapply S_Last with (b1 := [<<N k v; []>>]); crush.
-        + simpl in *. instantiate (1 := C (<< N k v; [] >> :: [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs) term0).
-          inversion H4.
-          one_step; eapply S_Add; crush.
-        + crush.
-      (* b1 != [] *)
-      - split; try split.
-        + simpl in *. instantiate (1:=C (<< N k v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l0 ->>> final op :: l ->>> k :: rs0) term0).
-          inv H4.
-          one_step; eapply S_Last with (b1 := << N k v; [] >> :: s :: b1); crush.
-        + simpl in *. instantiate (1:=C (<< N k v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l ->>> k :: l0 ->>> final op :: rs0) term0).
-          inv H4.
-          one_step; eapply S_Add; crush.
-        + crush.
-      }
+    + subst; eauto.
     (* S_FuseInc *)
     + subst; eauto.
   (* S_Inc *)
   - subst; eauto.
   (* S_Last *)
-  - inversion cxcz.
-    (* S_Emit *)
-    + subst; eauto.
-    (* S_App *)
-    + eauto.
-    (* S_App1 *)
-    + eauto.
-    (* S_App2 *)
-    + eauto.
-    (* S_Empty *)
-    + crush. destruct b1; crush.
-    (* S_First *)
-    + subst; eauto.
-    (* S_Add *)
-    + subst.
-      {
-      destruct b1.
-      (* b1 = [] *)
-      - simpl in *. inv H6. eapply ex_intro. eapply ex_intro.
-        split; try split.
-        + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l0 ->>> k0 :: l ->>> final op :: rs0) term1).
-          one_step; eapply S_Add with (b:=[<< n1; os1' >>]); crush.
-        + instantiate (1:=C [<< N k0 v; [] >>; << n1; os1' >>] os' (l ->>> final op :: l0 ->>> k0 :: rs0) term1).
-          one_step; eapply S_Last with (b1:=[<< N k0 v; [] >>]); crush.
-        + crush.
-      (* b1 != [] *)
-      - simpl in *. inv H6. eapply ex_intro. eapply ex_intro.
-        split; try split.
-        + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l0 ->>> k0 :: l ->>> final op :: rs0) term1).
-          one_step; eapply S_Add; crush.
-        + instantiate (1:=C (<< N k0 v; [] >> :: s :: b1 ++ [<< n1; os1' >>]) os' (l ->>> final op :: l0 ->>> k0 :: rs0) term1).
-          one_step; eapply S_Last with (b1:=<< N k0 v; [] >> :: s :: b1); crush.
-        + crush.
-      }
-    (* S_Inc *)
-    + subst; eauto.
-    (* S_Last *)
-    + ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
-    (* S_FuseInc *)
-    + subst; eauto.
+  - subst; eauto.
   (* S_FuseInc *)
   - subst; eauto.
 Qed.
