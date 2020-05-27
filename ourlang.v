@@ -172,6 +172,7 @@ Hint Unfold get_payload.
 Reserved Notation "c1 '-->' c2" (at level 40).
 
 (* TODO need S_Prop *)
+(* TODO s_app1 and s_app2 need to allow emit (don't use [] for result of ostream) *)
 Inductive step : config -> config -> Prop :=
 (* frontend *)
 | S_Emit : forall c b os rs t_lop l op,
@@ -1660,6 +1661,35 @@ Proof using.
 Qed.
 Hint Resolve lc_last.
 
+Lemma lc_empty :
+  forall cx cy cz l op os' rs term0,
+  well_typed cx ->
+  cx = C [] (l ->> op :: os') rs term0 ->
+  cy = C [] os' (l ->>> final op :: rs) term0 ->
+  not_add op ->
+  cx --> cy ->
+  cx --> cz ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz l op os' rs term0 WT Heqcx Heqcy Hnotadd cxcy cxcz.
+  inversion cxcz; ssame; eauto; crush.
+Qed.
+Hint Resolve lc_empty.
+
+Lemma lc_add :
+  forall cx cy cz b l k v os' rs term0,
+  well_typed cx ->
+  cx = C b (l ->> add k v :: os') rs term0 ->
+  cy = C (<< N k v; [] >> :: b) os' (l ->>> final (add k v) :: rs) term0 ->
+  cx --> cy ->
+  cx --> cz ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b l k v os' rs term0 WT Heqcx Heqcy cxcy cxcz.
+  inversion cxcz; ssame; eauto; crush.
+Qed.
+Hint Resolve lc_add.
+
 Lemma local_confluence_p1 :
   forall cx cy cz,
   well_typed cx ->
@@ -1668,66 +1698,7 @@ Lemma local_confluence_p1 :
   (cy -v cz).
 Proof using.
   intros cx cy cz WT cxcy cxcz.
-  inversion cxcy.
-  (* S_Emit *)
-  - subst. eauto.
-  (* S_App *)
-  - eauto.
-  (* S_App1 *)
-  - eauto.
-  (* S_App2 *)
-  - eauto.
-  (* S_Empty *)
-  - inversion cxcz; ssame.
-    (* S_Emit *)
-    + eauto.
-    (* S_App *)
-    + eauto.
-    (* S_App1 *)
-    + eauto.
-    (* S_App2 *)
-    + eauto.
-    (* S_Empty *)
-    + crush.
-    (* S_First auto handled *)
-    (* S_Add *)
-    + crush.
-    (* S_Inc *)
-    + eauto.
-    (* S_Last *)
-    + eauto.
-    (* S_FuseInc *)
-    + eauto.
-  (* S_First *)
-  - subst. eauto.
-  (* S_Add *)
-  - inversion cxcz.
-    (* S_Emit *)
-    + subst; eauto.
-    (* S_App *)
-    + eauto.
-    (* S_App1 *)
-    + eauto.
-    (* S_App2 *)
-    + eauto.
-    (* S_Empty *)
-    + crush. inversion H4. crush.
-    (* S_First *)
-    + subst; eauto.
-    (* S_Add *)
-    + crush. inversion H4. crush.
-    (* S_Inc *)
-    + subst; eauto.
-    (* S_Last *)
-    + subst; eauto.
-    (* S_FuseInc *)
-    + subst; eauto.
-  (* S_Inc *)
-  - subst; eauto.
-  (* S_Last *)
-  - subst; eauto.
-  (* S_FuseInc *)
-  - subst; eauto.
+  inversion cxcy; subst; eauto.
 Qed.
 
 Lemma local_confluence_p2 :
