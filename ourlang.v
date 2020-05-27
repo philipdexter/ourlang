@@ -1590,11 +1590,25 @@ Proof using.
           + crush.
         - destruct s.
           got.
-          + instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final (inc incby' []) :: rs0) term1).
-            admit.
-          (* IDEA change fuseinc to not return early, but just remove all targets, then create a S_Complete to return early
-             when no targets *)
-          (* so can first inc, then prop, then fuse, then complete *)
+          + instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final (inc incby' (remove Nat.eq_dec n ks0)) :: rs0) term1).
+            apply ex_intro with 4.
+            eapply Step.
+            instantiate (1:=C (b0 ++ << N n (n0 + incby0); l' ->> inc incby' ks0 :: os2 >> :: << n1; l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            eapply S_Prop; crush.
+            apply List.remove_In in H0. assumption.
+            eapply Step.
+            instantiate (1:=C (b0 ++ << N n ((n0 + incby0) + incby'); l' ->> inc incby' (remove Nat.eq_dec n ks0) :: os2 >> :: << n1; l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            eapply S_Inc; crush.
+            eapply Step.
+            instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; (l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> inc incby' (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            eapply S_Prop; crush.
+            apply List.remove_In in H0. assumption.
+            apply one_star.
+            assert (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; (l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> inc incby' (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) ++ << n1; l ++ l0 ->> inc incby0 (remove Nat.eq_dec n ks0) :: l' ->> inc incby' (remove Nat.eq_dec n ks0) :: [] >> :: b3) by crush.
+            rewrite H0.
+            assert (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) ++ << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) by crush.
+            rewrite H1.
+            eapply S_FuseInc; crush.
           + instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
             apply ex_intro with 2.
             eapply Step.
@@ -1639,7 +1653,7 @@ Proof using.
       * crush.
   (* S_Prop *)
   + eauto.
-Admitted.
+Qed.
 Hint Resolve lc_inc.
 
 Lemma lc_fuseinc :
