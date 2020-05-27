@@ -1388,7 +1388,7 @@ Proof using.
     }
   (* S_FuseInc *)
   (* need change in equivalence OR need prop rule and multi step to prop or last out of way and realiz the other*)
-  (* C (b3 ++ << N k v           ; l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b4) os0 (l' ->>> 0 :: rs0) term1 *)
+  (* C (b3 ++ << N k v           ; l0 ->> inc (incby0 + incby') ks0 :: os2 >>                                     :: b4) os0 (l' ->>> 0 :: rs0) term1 *)
   (* C (b3 ++ << N k (v + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k ks0) :: l' ->> inc incby' ks0 :: os2 >> :: b4) os0 rs0 term1 *)
   + admit.
 Admitted.
@@ -1906,14 +1906,35 @@ Admitted.
    rewriting systems." Journal of the ACM (JACM) 27.4 (1980): 797-821.
 *)
 
-(* requires neotherian induction *)
+(* TODO actually state what the paper says, like have P1 and then have P2, then state the local to global
+   but admit the points in the proof which require noetherian induction, so basically
+   get rid of the on the left blah blah stuff *)
+Axiom neo_indo_left :
+  forall {A : Type} (R1 R2 sim : A -> A -> Prop),
+    forall x y z,
+    (exists n, star R1 n x y) ->
+    R2 x z ->
+    exists u v, (exists n, star R2 n y u) /\ (exists m, star R1 m z v) /\ sim u v.
 Lemma on_the_left'_modulo :
   forall {A : Type} (R1 R2 sim : A -> A -> Prop),
   equiv A sim ->
   diamond_property_modulo R1 R2 sim -> forall n, diamond_property_modulo (star R1 n) R2 sim.
+Proof.
+  intros A R1 R2 sim simequiv diamond.
+  destruct simequiv.
+  destruct H0.
+  unfold diamond_property_modulo in *.
+  intros n x y z xy xz.
+  generalize dependent z.
+  induction n; intros.
+  - apply star_zero in xy; subst.
+    apply ex_intro with (z).
+    apply ex_intro with (z).
+    split; try split; eauto.
+  - 
 Admitted.
 
-(* requires neotherian induction *)
+(* requires noetherian induction *)
 Lemma on_the_right'_modulo :
   forall {A : Type} (R1 R2 sim : A -> A -> Prop),
   equiv A sim ->
@@ -2014,6 +2035,146 @@ Qed.
 (*********************)
 (*********************)
 (*********************)
+
+Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
+| CRTZero : forall x, clos_refl_trans R x x
+| CRTStep : forall x y, clos_refl_trans R x y -> forall z, R y z -> clos_refl_trans R x z.
+Hint Constructors clos_refl_trans.
+
+Definition diamond_property_sim {A : Type}
+           (sim R1 R2 : A -> A -> Prop)  :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists u v, clos_refl_trans R2 y u /\ clos_refl_trans R1 z v /\ sim u v.
+
+Lemma diamond_symmetric : forall {A : Type} (sim R1 R2 : A -> A -> Prop),
+  diamond_property_sim sim R1 R2 -> diamond_property_sim sim R2 R1.
+Admitted.
+Hint Resolve diamond_symmetric.
+
+
+Lemma snoc_clos_refl_trans_1n {A : Type} (R : A -> A -> Prop) :
+  forall x y, clos_refl_trans_1n A R x y -> forall z, R y z -> clos_refl_trans_1n A R x z.
+Admitted.
+Hint Resolve snoc_clos_refl_trans_1n.
+
+Lemma cons_clos_refl_trans {A : Type} (R : A -> A -> Prop) :
+  forall y z, clos_refl_trans R y z -> forall x, R x y -> clos_refl_trans R x z.
+Admitted.
+Hint Resolve cons_clos_refl_trans.
+
+Lemma clos_refl_trans_equiv {A : Type} R :
+  forall x y, clos_refl_trans R x y <-> clos_refl_trans_1n A R x y.
+Admitted.
+Hint Resolve clos_refl_trans_equiv.
+
+Axiom noe_indo :
+  forall {A : Type} (sim R1 R2 : A -> A -> Prop),
+  forall x y z,
+  clos_refl_trans R1 x y ->
+  R2 x z ->
+  exists u v, clos_refl_trans R2 y u /\ clos_refl_trans R1 z v /\ sim u v.
+Lemma on_the_left :
+  forall {A : Type} (sim R1 R2 : A -> A -> Prop),
+  equiv A sim ->
+  diamond_property_sim sim R1 R2 -> diamond_property_sim sim (clos_refl_trans R1) R2.
+Proof using.
+  intros A sim R1 R2 simequiv diamond.
+  destruct simequiv as [simrefl H].
+  destruct H as [simtrans simsym].
+  unfold diamond_property_sim in *.
+  intros x y z xy xz.
+  generalize dependent z.
+  induction xy; intros.
+  - apply ex_intro with (z). apply ex_intro with (z). eauto.
+  - apply clos_refl_trans_equiv in xy.
+    inversion xy.
+    + subst.
+      apply diamond with (z:=z0) in H; eauto.
+      destruct H.
+      destruct H.
+      destruct H.
+      destruct H0.
+      apply ex_intro with (x).
+      apply ex_intro with (x0).
+      eauto.
+    + subst.
+      apply IHxy in xz.
+      destruct xz.
+      destruct H2.
+      destruct H2.
+      destruct H3.
+      apply diamond with (z:=x0) in H; eauto.
+      destruct H.
+      destruct H.
+      destruct H.
+      destruct H5.
+      (* GIVE UP HERE *)
+      need to do the noetherian induction with both properties p1 and p2,
+      maybe ditch general case and just prove for ourlang
+
+Definition diamond_property_sim {A : Type}
+           (R1 R2 sim : A -> A -> Prop)  :=
+forall x y z,
+    R1 x y ->
+    R2 x z ->
+    exists u v, R2 y u /\ R1 z v /\ sim u v.
+
+Lemma diamond_sim_symmetric : forall {A : Type} (R1 R2 sim : A -> A -> Prop),
+  (equiv A sim) ->
+  diamond_property_sim R1 R2 sim -> diamond_property_sim R2 R1 sim.
+Admitted.
+
+Lemma on_the_left_sim :
+  forall {A : Type} (R1 R2 sim : A -> A -> Prop),
+  (equiv A sim) ->
+  diamond_property_sim R1 R2 sim -> diamond_property_sim (clos_refl_trans R1) R2 sim.
+Proof using.
+  intros A R1 R2 sim simequiv diamond.
+  destruct simequiv as [simrefl H].
+  destruct H as [simtrans simsymm].
+  unfold diamond_property_sim in *.
+  intros x y z xy xz.
+  generalize dependent z.
+  induction xy; intros.
+  - eauto.
+  - apply clos_refl_trans_equiv in xy.
+    inversion xy.
+    + subst.
+      apply diamond with (z:=z0) in H; eauto.
+      destruct H.
+      destruct H.
+      destruct H.
+      destruct H0.
+      apply ex_intro with (x).
+      apply ex_intro with (x0).
+      eauto.
+    + subst.
+      apply IHxy in xz.
+      destruct xz.
+      destruct H2.
+      destruct H2.
+      destruct H3.
+      apply diamond with (z:=x0) in H; eauto.
+      destruct H.
+      destruct H.
+      destruct H.
+      destruct H5.
+      will work if i introduce a   sim x y -> R x u -> exists v, R y v /\ sim u v
+      then apply that to x0 and x1 to get a x4 that is sim with x3
+      but... can ourlang do that? in can currently, but only if we
+      figure out how to get rid of multistep
+      (* apply ex_intro with (x2). *)
+      (* apply ex_intro with (x1). *)
+      (* split. *)
+      (* assumption. *)
+      (* split. *)
+      (* assumption. *)
+Qed.
+
+
+(* end trying one step sim *)
 
 Inductive clos_refl_trans {A : Type} (R : A -> A -> Prop) : A -> A -> Prop :=
 | CRTZero : forall x, clos_refl_trans R x x
