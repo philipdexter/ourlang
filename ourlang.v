@@ -205,13 +205,12 @@ Inductive step : config -> config -> Prop :=
     s1' = <<(N k (v + incby)); os1'>> ->
     In k ks ->
     c --> C (b1 ++ s1' :: b2) os rs term
-| S_GetPay : forall c b os rs b1 s1 s1' os1 os1' b2 k v ks l term,
+| S_GetPay : forall c b os rs b1 s1 s1' os1 os1' b2 k v l term,
     c = C b os rs term ->
     b = b1 ++ s1 :: b2 ->
     s1 = <<(N k v); os1>> ->
     os1 = l ->> getpay k :: os1' ->
     s1' = <<(N k v); os1'>> ->
-    In k ks ->
     c --> C (b1 ++ s1' :: b2) os (l ->>> v :: rs) term
 | S_Last : forall c b os rs l n1 os1 os1' op b1 k term,
     c = C b os rs term ->
@@ -716,7 +715,7 @@ Proof using.
                     ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
     rewrite H1. clear H1.
     apply distinct_rotate.
-    apply distinct_rotate_rev in H10.
+    apply distinct_rotate_rev in H9.
     crush.
   (* S_Last *)
   - apply distinct_rotate_rev in H9.
@@ -1357,7 +1356,207 @@ Lemma lc_getpay :
   cx --> cz ->
   cy -v cz.
 Proof using.
-Admitted.
+  intros cx cy cz os rs term k v l os1 b1 b2.
+  intros WT Heqcx Heqcy cxcy cxcz.
+  inversion cxcz; ssame.
+  (* S_Emit *)
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ [l0 ->> op]) (l ->>> v :: rs0) (t_result l0)); eauto.
+  (* S_App *)
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (#[ x := v2] t12)); eauto.
+  (* S_App1 *)
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (t_app t1' t2)); eauto.
+  (* S_App2 *)
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (t_app v1 t2')); eauto.
+  (* S_Empty *)
+  - destruct b1; crush.
+  (* S_First *)
+  - destruct b1; simpl in *.
+    + inv H1.
+      got.
+      * instantiate (1:=C (<< N k v; os1 ++ [l0 ->> op] >> :: b') os' (l ->>> v :: rs0) term0).
+        eauto.
+      * instantiate (1:=C (<< N k v; os1 ++ [l0 ->> op] >> :: b') os' (l ->>> v :: rs0) term0).
+        rewrite <- List.app_comm_cons.
+        one_step. eapply S_GetPay with (b1:=[]); crush.
+      * crush.
+    + inv H1.
+      got.
+      * instantiate (1:=C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l ->>> v :: rs0) term0).
+        eauto.
+      * instantiate (1:=C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l ->>> v :: rs0) term0).
+        rewrite List.app_comm_cons.
+        eauto.
+      * crush.
+  (* S_Add *)
+  - got.
+    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l0 ->>> final (add k0 v0) :: l ->>> v :: rs0) term0).
+      eauto.
+    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l ->>> v :: l0 ->>> final (add k0 v0) :: rs0) term0).
+      rewrite List.app_comm_cons.
+      eauto.
+    * crush.
+  (* S_Inc *)
+  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k0) (v':=v0) in H1; eauto.
+    destruct H1; try destruct H0.
+    (* Same target *)
+    + crush.
+    (* First first *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> inc incby ks :: os1'' >> :: x1) in H0; crush.
+      inv H.
+      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
+        one_step. eapply S_Inc; crush.
+      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
+        eauto.
+      * crush.
+    (* First secon *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> inc incby ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
+      inv H.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C (b0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+        eauto.
+      * instantiate (1:=C ((b0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+  (* S_GetPay *)
+  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k0) (v':=v0) in H1; eauto.
+    destruct H1; try destruct H0.
+    (* Same target *)
+    + crush. inv H5. crush.
+    (* First first *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> getpay k0 :: os1' >> :: x1) in H0; eauto; crush.
+      inv H.
+      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k0 v0; os1' >> :: b3) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k0 v0; os1' >> :: b3) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
+        eauto.
+      * crush.
+    (* First second *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> getpay k0 :: os1' >> :: x0) (b4:=x1) in H0; eauto; crush.
+      inv H.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C (b0 ++ << N k0 v0; os1' >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
+        eauto.
+      * instantiate (1:=C ((b0 ++ << N k0 v0; os1' >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+  (* S_Last *)
+  - destruct b2.
+    + apply List.app_inj_tail in H1.
+      destruct H1.
+      inv H1.
+      crush.
+    + remember (s :: b2) as bend.
+      assert (exists y ys, bend = ys ++ [y]) by (apply list_snoc with (xs:=bend) (x:=s) (xs':=b2); crush).
+      destruct H0; destruct H0.
+      inv H0.
+      rewrite H2 in *. clear H2.
+      assert (b1 ++ << N k v; l ->> getpay k :: os1 >> :: x0 ++ [x] = (b1 ++ << N k v; l ->> getpay k :: os1 >> :: x0) ++ [x]) by crush.
+      rewrite H0 in H1; clear H0.
+      apply List.app_inj_tail in H1.
+      destruct H1.
+      subst.
+      got.
+      * instantiate (1:=C ((b1 ++ << N k v; os1 >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: l ->>> v :: rs0) term0).
+        one_step. eapply S_Last; crush.
+      * instantiate (1:=C (b1 ++ << N k v; os1 >> :: x0 ++ [<< n1; os1' >>]) os0 (l ->>> v :: l0 ->>> final op :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+  (* S_FuseInc *)
+  - destruct n as [k' v'].
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k') (v':=v') in H1; eauto.
+    destruct H1; try destruct H0.
+    (* Same target *)
+    + destruct H1. destruct H2. destruct H3.
+      destruct os2.
+      * crush.
+      * inv H4.
+      {
+      got.
+      - instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l' ->>> final (inc incby' ks) :: l ->>> v' :: rs0) term0).
+        one_step. eapply S_FuseInc; crush.
+      - instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l ->>> v' :: l' ->>> final (inc incby' ks) :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      - crush.
+      }
+    (* First first *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; os2 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x1) in H0; eauto; crush.
+      inv H.
+      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
+        one_step. eapply S_FuseInc; crush.
+      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+    (* First second *)
+    + destruct H0. destruct H0. destruct H0.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; os2 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0) (b4:=x1) in H0; eauto; crush.
+      inv H.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      got.
+      * instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
+        one_step. eapply S_FuseInc; crush.
+      * instantiate (1:=C ((b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+  (* S_Inc *)
+  - destruct n1 as [k' v'].
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=<< n2; os3 >> :: b3) (k:=k) (v:=v) (k':=k') (v':=v') in H2; eauto.
+    destruct H2; try destruct H1.
+    (* Same target *)
+    + destruct H2. destruct H3. destruct H4. subst.
+      inv H5.
+      crush.
+    (* First first *)
+    + destruct H1. destruct H1. destruct H1.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; l0 ->> op :: os2 >> :: x1) in H1; crush.
+      inv H.
+      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+      got.
+      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+        one_step. eapply S_Prop; crush.
+      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+        one_step. eapply S_GetPay; crush.
+      * crush.
+    (* First second *)
+    + destruct H1. destruct H1. destruct H1.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; l0 ->> op :: os2 >> :: x0) (b4:=x1) in H1; eauto; crush.
+      destruct x0.
+      * inv H.
+        simpl in *.
+        eapply target_unique with (b1:=x) (b2:=<< N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+        inv H1.
+        {
+        got.
+        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << N k v; os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+          one_step. eapply S_Prop; crush.
+        - instantiate (1:=C ((b0 ++ [<< N k' v'; os2 >>]) ++ << N k v; os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+          one_step. eapply S_GetPay; crush.
+        - crush.
+        }
+      * inv H.
+        simpl in *.
+        eapply target_unique with (b1:=x) (b2:=s :: x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+        {
+        got.
+        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+          one_step. eapply S_Prop; crush.
+        - instantiate (1:=C ((b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+          one_step. eapply S_GetPay; crush.
+        - crush.
+        }
+Qed.
 Hint Resolve lc_getpay.
 
 Lemma lc_prop :
