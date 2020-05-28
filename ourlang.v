@@ -90,6 +90,7 @@ Inductive term : Type :=
 | t_app : term -> term -> term
 | t_abs : string -> type -> term -> term
 | t_emit : labeled_operation -> term
+| t_label : label -> term
 | t_result : result -> term.
 Hint Constructors term.
 
@@ -99,7 +100,7 @@ Inductive value : term -> Prop :=
 | v_result : forall result,
              value (t_result result).
 Hint Constructors value.
-Definition noop : term := t_result 0.
+Definition noop : term := t_label 0.
 
 Definition eqb_string (x y : string) : bool :=
   if string_dec x y then true else false.
@@ -116,6 +117,8 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_app (#[x:=s] t1) (#[x:=s] t2)
   | t_emit lop =>
       t_emit lop
+  | t_label l =>
+      t_label l
   | t_result r =>
       t_result r
   end
@@ -155,14 +158,17 @@ Hint Unfold get_payload.
 
 Reserved Notation "c1 '-->' c2" (at level 40).
 
-(* TODO need S_Claim *)
 (* TODO s_app1 and s_app2 need to allow emit (don't use [] for result of ostream) *)
 Inductive step : config -> config -> Prop :=
 (* frontend *)
 | S_Emit : forall c b os rs t_lop l op,
     c = C b os rs t_lop ->
     t_lop = t_emit (l ->> op) ->
-    c --> C b (os ++ [l ->> op]) rs (t_result l)
+    c --> C b (os ++ [l ->> op]) rs (t_label l)
+| S_Claim : forall c b os rs l v,
+    c = C b os rs (t_label l) ->
+    In (l ->>> v) rs ->
+    c --> C b os rs (t_result v)
 | S_App : forall c b os rs x T t12 v2,
     c = C b os rs (t_app (t_abs x T t12) v2) ->
     value v2 ->
@@ -310,6 +316,7 @@ match t with
 | t_emit (_ ->> add k v) => [k]
 | t_emit (_ ->> inc _ _) => []
 | t_emit (_ ->> getpay _) => []
+| t_label _ => []
 | t_result _ => []
 end.
 Hint Unfold term_keys.
@@ -374,6 +381,15 @@ Definition rstream_labels (rs : rstream) :=
 map (fun r => match r with l ->>> _ => l end) rs.
 Hint Unfold rstream_labels.
 
+Lemma rstream_labels_dist :
+  forall rs1 rs2,
+  rstream_labels (rs1 ++ rs2) = rstream_labels rs1 ++ rstream_labels rs2.
+Proof using.
+ induction rs1; intros; crush.
+Qed.
+Hint Rewrite rstream_labels_dist.
+
+
 Definition backend_labels (b : backend) :=
 List.concat (map (fun s => ostream_labels (get_ostream s)) b).
 Hint Unfold backend_labels.
@@ -396,6 +412,7 @@ match t with
 | t_app t1 t2 => List.concat [term_labels t1; term_labels t2]
 | t_abs _ _ t => term_labels t
 | t_emit (l ->> op) => [l]
+| t_label _ => []
 | t_result _ => []
 end.
 
@@ -648,7 +665,7 @@ Axiom fresh :
   forall c b os rs l op,
   c = C b os rs (t_emit (l ->> op)) ->
   well_typed c ->
-  well_typed (C b (os ++ [l ->> op]) rs (t_result l)).
+  well_typed (C b (os ++ [l ->> op]) rs (t_label l)).
 
 Lemma cons_app :
   forall {A: Type} (x : A) xs,
@@ -1265,6 +1282,7 @@ Proof using.
   - crush.
   - crush.
   - crush.
+  - crush.
   - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
@@ -1281,6 +1299,7 @@ Proof using.
   intros rs t t' H.
   inversion H; ssame.
   - destruct os; crush.
+  - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
@@ -1306,6 +1325,61 @@ Proof.
 Admitted.
 Hint Resolve frontend_rstream_extension.
 
+Lemma unique_result :
+  forall b os rs t l r r',
+  well_typed (C b os rs t) ->
+  In (l ->>> r) rs ->
+  In (l ->>> r') rs ->
+  r = r'.
+Proof using.
+  intros b os rs t l r r' WT In1 In2.
+  inversion WT.
+  apply List.in_split in In1.
+  destruct In1. destruct H2.
+  subst.
+  apply List.in_app_or in In2.
+  destruct In2.
+  - apply List.in_split in H1.
+    destruct H1.
+    destruct H1.
+    subst.
+    simpl in H0.
+    apply distinct_concat in H0.
+    destruct H0.
+    apply distinct_concat in H1.
+    destruct H1.
+    rewrite List.app_nil_r in H2.
+    rewrite rstream_labels_dist in H2.
+    rewrite rstream_labels_dist in H2.
+    unfold rstream_labels at 2 in H2.
+    simpl in H2.
+    apply distinct_rotate_rev in H2.
+    rewrite List.app_comm_cons in H2.
+    rewrite List.app_comm_cons in H2.
+    rewrite <- List.app_assoc in H2.
+    simpl in H2.
+    apply distinct_rotate in H2.
+    apply distinct_concat in H2.
+    destruct H2.
+    inv H3.
+    crush.
+  - apply List.in_split in H1.
+    destruct H1.
+    destruct H1.
+    destruct x1; crush.
+    apply distinct_concat in H0.
+    destruct H0.
+    apply distinct_concat in H1.
+    destruct H1.
+    apply distinct_rotate_rev in H2.
+    rewrite List.app_comm_cons in H2.
+    rewrite List.app_assoc in H2.
+    apply distinct_rotate_rev in H2.
+    simpl in H2.
+    inversion H2.
+    crush.
+Qed.
+
 Axiom app_reduce :
   forall rs t t' t'',
   C [] [] rs (t_app t t') --> C [] [] rs (t_app t'' t') ->
@@ -1313,23 +1387,34 @@ Axiom app_reduce :
 
 Lemma frontend_deterministic :
   forall t rs t',
+  well_typed (C [] [] rs t) ->
   C [] [] rs t --> C [] [] rs t' ->
   forall t'',
   C [] [] rs t --> C [] [] rs t'' ->
   t' = t''.
 Proof using.
 (* TODO uncomment, takes too long so temp commenting *)
-(*   induction t; intros. *)
+(*   induction t; intros rs t' WT; intros. *)
 (*   inversion H; inversion H0; try (inv H5; eapply frontend_no_value in H15; crush); try (inv H5; eapply frontend_no_value in H16; crush); try (destruct b1; crush); try (destruct os; crush). *)
 (*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
 (*     + eapply frontend_no_value' in H7. assert (value (t_abs x T t12)) by constructor. crush. *)
 (*     + assert (C [] [] rs t0 --> C [] [] rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
 (*       apply IHt1 with (t':=t1'0) in H7; crush. *)
+(*       clear H0 H7 H2 H14 H1 IHt1 IHt2 H. *)
+(*       inversion WT. *)
+(*       split. *)
+(*       * crush. *)
+(*       * crush. *)
 (*     + eapply frontend_no_value' in H7; crush. *)
 (*     + inv H12. inv H5. eapply frontend_no_value' in H8; crush. *)
 (*     + inv H12. inv H5. eapply frontend_no_value' in H15; crush. *)
 (*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) in H8; crush. *)
 (*     Unshelve. *)
+(*     split; crush. *)
+(*     inversion WT. *)
+(*     unfold config_labels in H3. *)
+(*     simpl in H3. *)
+(*     crush. *)
 (*     auto. *)
 (*     auto. *)
 (*     auto. *)
@@ -1343,9 +1428,59 @@ Proof using.
 (*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
 (*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
 (*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
+(*     inv H0; try (destruct os; crush); try (destruct b1; crush); try (inv H3). *)
+(*     + assert (v = v0) by (eapply unique_result; eauto). *)
+(*       crush. *)
+(*     + inv H4. *)
+(*   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H4); try (inv H5). *)
 (* Qed. *)
 Admitted.
 Hint Resolve frontend_deterministic.
+
+Lemma lc_claim :
+  forall cx cy cz b os rs l v,
+  well_typed cx ->
+  cx = C b os rs (t_label l) ->
+  cy = C b os rs (t_result v) ->
+  cx --> cy ->
+  cx --> cz ->
+  In (l ->>> v) rs ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b os rs l v.
+  intros WT Heqcx Heqcy cxcy cxcz.
+  intros RIn.
+  inversion cxcz; ssame.
+  (* S_Emit auto handled *)
+  (* S_Claim *)
+  - assert (v = v0) by (eapply unique_result; eauto).
+    crush.
+  (* S_App auto handled *)
+  (* S_App1 auto handled *)
+  (* S_App2 auto handled *)
+  (* S_Empty *)
+  - gotw (C [] os' (l0 ->>> final op :: rs0) (t_result v)); eauto.
+    eapply S_Claim; eauto; crush.
+  (* S_First *)
+  - gotw (C (<< n1; os1 ++ [l0 ->> op] >> :: b') os' rs0 (t_result v)); eauto.
+  (* S_Add *)
+  - gotw (C (<< N k v0; [] >> :: b0) os' (l0 ->>> final (add k v0) :: rs0) (t_result v)); eauto.
+    eapply S_Claim; eauto; crush.
+  (* S_Inc *)
+  - gotw (C (b1 ++ << N k (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_result v)); eauto.
+  (* S_GetPay *)
+  - gotw (C (b1 ++ << N k v0; os1' >> :: b2) os0 (l0 ->>> v0 :: rs0) (t_result v)); eauto.
+    eapply S_Claim; eauto; crush.
+  (* S_Last *)
+  - gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) (t_result v)); eauto.
+    eapply S_Claim; eauto; crush.
+  (* S_FuseInc *)
+  - gotw (C (b1 ++ << n; os1 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_result v)); eauto.
+    eapply S_Claim; eauto; crush.
+  (* S_Prop *)
+  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l0 ->> op] >> :: b2) os0 rs0 (t_result v)); eauto.
+Qed.
+Hint Resolve lc_claim.
 
 Lemma lc_getpay :
   forall cx cy cz os rs term k v l os1 b1 b2,
@@ -1360,7 +1495,9 @@ Proof using.
   intros WT Heqcx Heqcy cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ [l0 ->> op]) (l ->>> v :: rs0) (t_result l0)); eauto.
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ [l0 ->> op]) (l ->>> v :: rs0) (t_label l0)); eauto.
+  (* S_Claim *)
+  - eauto.
   (* S_App *)
   - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (#[ x := v2] t12)); eauto.
   (* S_App1 *)
@@ -1574,7 +1711,9 @@ Proof using.
   intros notin.
   inversion cxcz; ssame.
   (* S_Emit *)
-  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ [l0 ->> op0]) rs0 (t_result l0)); eauto.
+  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ [l0 ->> op0]) rs0 (t_label l0)); eauto.
+  (* S_Claim *)
+  - eauto.
   (* S_App *)
   - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 (#[ x := v2] t12)); eauto.
   (* S_App1 *)
@@ -1838,6 +1977,7 @@ Proof using.
   intros Vv1 t2t2'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Claim auto handled *)
   (* S_App *)
   + apply frontend_no_value' in t2t2'; crush.
   (* S_App1 *)
@@ -1894,6 +2034,7 @@ Proof using.
   intros cx cy cz b os rs x T t12 v2 WT Heqcx Heqcy Vv2 cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Claim auto handled *)
   (* S_App *)
   + crush.
   (* S_App1 *)
@@ -1941,7 +2082,7 @@ Lemma lc_emit :
   forall cx cy cz b os rs l op,
   well_typed cx ->
   cx = C b os rs (t_emit (l ->> op)) ->
-  cy = C b (os ++ [l ->> op]) rs (t_result l) ->
+  cy = C b (os ++ [l ->> op]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
   cy -v cz.
@@ -1950,38 +2091,39 @@ Proof using.
   inversion cxcz; ssame.
   (* S_Emit *)
   + crush.
+  (* S_Claim auto handled *)
   (* S_App auto handled *)
   (* S_App1 auto handled *)
   (* S_App2 auto handled *)
   (* S_Empty *)
-  + gotw (C [] (os' ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
+  + gotw (C [] (os' ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_label l)).
     * eapply S_Empty; crush.
     * eapply S_Emit; crush.
     * crush.
   (* S_First *)
-  + gotw (C (<< n1; os1 ++ [l0 ->> op0] >> :: b') (os' ++ [l ->> op]) rs0 (t_result l)).
+  + gotw (C (<< n1; os1 ++ [l0 ->> op0] >> :: b') (os' ++ [l ->> op]) rs0 (t_label l)).
     * eapply S_First; crush.
     * eapply S_Emit; crush.
     * crush.
   (* S_Add *)
-  + gotw (C (<< N k v; [] >> :: b0) ( os' ++ [l ->> op]) (l0 ->>> final (add k v) :: rs0) (t_result l)).
+  + gotw (C (<< N k v; [] >> :: b0) ( os' ++ [l ->> op]) (l0 ->>> final (add k v) :: rs0) (t_label l)).
     * eapply S_Add; crush.
     * eapply S_Emit; crush.
     * crush.
   (* S_Inc *)
-  + gotw (C (b1 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) (os0 ++ [l ->> op]) rs0 (t_result l)).
+  + gotw (C (b1 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) (os0 ++ [l ->> op]) rs0 (t_label l)).
     * eapply S_Inc; crush.
     * eapply S_Emit; crush.
     * crush.
   (* S_GetPay *)
   + eauto.
   (* S_Last *)
-  + gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
+  + gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_label l)).
     * eapply S_Last; crush.
     * eapply S_Emit; crush.
     * crush.
   (* S_FuseInc *)
-  + gotw (C (b1 ++ << n; os1 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ [l ->> op]) (l' ->>> final (inc incby' ks) :: rs0) (t_result l)).
+  + gotw (C (b1 ++ << n; os1 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ [l ->> op]) (l' ->>> final (inc incby' ks) :: rs0) (t_label l)).
     * eapply S_FuseInc; crush.
     * eapply S_Emit; crush.
     * crush.
@@ -2004,6 +2146,7 @@ Proof using.
   intros t1t1'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Claim auto handled *)
   (* S_App *)
   + eauto.
   (* S_App1 *)
@@ -2060,6 +2203,8 @@ Proof using.
   intros cx cy cz rs l op term0 n1 os1 b' os' WT Heqcx Heqcy Hnotnotadd cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit *)
+  + eauto.
+  (* S_Claim *)
   + eauto.
   (* S_App *)
   + eauto.
@@ -2137,6 +2282,8 @@ Proof using.
   intros cx cy cz rs term0 l incby ks os1'' b1 b2 k os v WT Heqcx Heqcy HIn cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit *)
+  + eauto.
+  (* S_Claim *)
   + eauto.
   (* S_App *)
   + eauto.
@@ -2334,6 +2481,8 @@ Proof using.
   assert (H2 : C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os (l' ->>> final (inc incby' ks) :: rs) term0 = cy) by auto.
   inversion cxcz; ssame.
   (* S_Emit *)
+  + eauto.
+  (* S_Claim *)
   + eauto.
   (* S_App *)
   + eauto.
@@ -2545,6 +2694,8 @@ Proof using.
   inversion cxcz.
   (* S_Emit *)
   + subst; eauto.
+  (* S_Claim *)
+  + eauto.
   (* S_App *)
   + eauto.
   (* S_App1 *)
