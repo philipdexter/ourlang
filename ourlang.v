@@ -27,16 +27,17 @@ Inductive node : Type :=
 | N : key -> payload -> node.
 Hint Constructors node.
 
-(* TODO add lookup *)
 Inductive operation : Type :=
 | inc : nat -> keyset -> operation
-| add : key -> payload -> operation.
+| add : key -> payload -> operation
+| getpay : key -> operation.
 Hint Constructors operation.
 
 Definition target op :=
 match op with
 | inc _ ks => ks
 | add _ _ => []
+| getpay k => [k]
 end.
 Hint Unfold target.
 
@@ -44,6 +45,7 @@ Definition not_add op : Prop :=
 match op with
 | inc _ _ => True
 | add _ _ => False
+| getpay _ => True
 end.
 Hint Unfold not_add.
 
@@ -51,6 +53,7 @@ Definition final op : payload :=
 match op with
 | inc _ ks => 0
 | add k _ => k
+| getpay _ => 0
 end.
 Hint Unfold final.
 
@@ -152,6 +155,7 @@ Hint Unfold get_payload.
 
 Reserved Notation "c1 '-->' c2" (at level 40).
 
+(* TODO need S_Claim *)
 (* TODO s_app1 and s_app2 need to allow emit (don't use [] for result of ostream) *)
 Inductive step : config -> config -> Prop :=
 (* frontend *)
@@ -201,6 +205,14 @@ Inductive step : config -> config -> Prop :=
     s1' = <<(N k (v + incby)); os1'>> ->
     In k ks ->
     c --> C (b1 ++ s1' :: b2) os rs term
+| S_GetPay : forall c b os rs b1 s1 s1' os1 os1' b2 k v ks l term,
+    c = C b os rs term ->
+    b = b1 ++ s1 :: b2 ->
+    s1 = <<(N k v); os1>> ->
+    os1 = l ->> getpay k :: os1' ->
+    s1' = <<(N k v); os1'>> ->
+    In k ks ->
+    c --> C (b1 ++ s1' :: b2) os (l ->>> v :: rs) term
 | S_Last : forall c b os rs l n1 os1 os1' op b1 k term,
     c = C b os rs term ->
     b = b1 ++ [<<n1; os1>>] ->
@@ -298,6 +310,7 @@ match t with
 | t_abs _ _ t => term_keys t
 | t_emit (_ ->> add k v) => [k]
 | t_emit (_ ->> inc _ _) => []
+| t_emit (_ ->> getpay _) => []
 | t_result _ => []
 end.
 Hint Unfold term_keys.
@@ -344,6 +357,9 @@ Proof using.
       simpl.
       apply cons_equal; crush.
       apply IHos1.
+    + unfold ostream_keys.
+      simpl.
+      eauto.
 Qed.
 Hint Rewrite ostream_labels_dist.
 
@@ -564,7 +580,7 @@ Lemma distinct_rotate_front :
   forall A (x : A) y xs,
   distinct (x :: y :: xs) ->
   distinct (y :: x :: xs).
-Proof.
+Proof using.
   intros.
   assert (x :: y :: xs = [x] ++ y :: xs) by crush.
   rewrite H0 in H.
@@ -664,14 +680,22 @@ Proof using.
   - unfold backend_labels. simpl.
     unfold backend_labels in H9. simpl in H9.
     destruct op; crush.
-    apply distinct_rotate.
-    remember (ostream_labels os' ++ rstream_labels rs) as y.
-    assert (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
-            (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
-    rewrite H1.
-    rewrite List.app_assoc in H9.
-    apply distinct_rotate_rev with (x:=l) in H9.
-    crush.
+    + apply distinct_rotate.
+      remember (ostream_labels os' ++ rstream_labels rs) as y.
+      assert (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
+              (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
+      rewrite H1.
+      rewrite List.app_assoc in H9.
+      apply distinct_rotate_rev with (x:=l) in H9.
+      crush.
+    + apply distinct_rotate.
+      remember (ostream_labels os' ++ rstream_labels rs) as y.
+      assert (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
+              (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
+      rewrite H1.
+      rewrite List.app_assoc in H9.
+      apply distinct_rotate_rev with (x:=l) in H9.
+      crush.
   (* S_Add *)
   - apply distinct_rotate_rev. crush.
   - unfold backend_labels. simpl.
@@ -681,6 +705,20 @@ Proof using.
     crush.
   (* S_Inc *)
   - crush.
+  (* S_GetPay *)
+  - unfold backend_labels at 2.
+    simpl.
+    assert (backend_labels b1 ++
+                           (ostream_labels os1' ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2))
+                           ++ ostream_labels os ++ l :: rstream_labels rs =
+    (backend_labels b1 ++
+                    (ostream_labels os1' ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2))
+                    ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
+    rewrite H1. clear H1.
+    apply distinct_rotate.
+    apply distinct_rotate_rev in H10.
+    crush.
+  (* S_Last *)
   - apply distinct_rotate_rev in H9.
     rewrite List.app_assoc.
     rewrite List.app_assoc.
@@ -852,6 +890,153 @@ Proof using.
 Qed.
 Hint Immediate goes_to_refl.
 
+Lemma distinct_center :
+  forall {A : Type} (xs : list A) x ys xs' ys' l l',
+  distinct l ->
+  l = l' ->
+  l = xs ++ x :: ys ->
+  l = xs' ++ x :: ys' ->
+  xs = xs' /\ ys = ys'.
+Proof using.
+  induction xs; intros.
+  - simpl in *.
+    subst.
+    destruct xs'.
+    + crush.
+    + inv H2.
+      rewrite List.app_comm_cons in H.
+      apply distinct_rotate_rev in H.
+      inversion H; subst.
+      inv H0.
+      crush.
+  - simpl in *.
+    subst.
+    destruct xs'.
+    + simpl in H2.
+      rewrite List.app_comm_cons in H.
+      apply distinct_rotate_rev in H.
+      inv H2.
+      inversion H; subst.
+      inv H0.
+      crush.
+    + simpl in *.
+      inv H2.
+      eapply IHxs in H3; eauto.
+      * destruct H3; split; eauto; crush.
+      * inversion H; crush.
+Qed.
+
+Lemma distinct_nodes :
+  forall b os0 rs0 term0,
+  well_typed (C b os0 rs0 term0) ->
+  distinct b.
+Proof using.
+  induction b; intros; eauto.
+  assert (well_typed (C b os0 rs0 term0)).
+  {
+  inv H.
+  unfold config_keys in H0.
+  unfold backend_keys in H0.
+  simpl in H0.
+  rewrite cons_app in H0.
+  apply distinct_concat in H0.
+  unfold config_labels in H1.
+  unfold backend_labels in H1.
+  simpl in H1.
+  rewrite <- List.app_assoc in H1.
+  apply distinct_concat in H1.
+  destruct H0.
+  destruct H1.
+  split.
+  - unfold config_keys.
+    crush.
+  - unfold config_labels.
+    crush.
+  }
+  apply IHb in H0.
+  eapply distinct_many.
+  - instantiate (1:=b).
+    instantiate (1:=a).
+    reflexivity.
+  - intro.
+    inv H.
+    unfold config_keys in H2.
+    apply distinct_concat in H2.
+    destruct H2.
+    clear H2 H3.
+    apply List.in_split in H1.
+    destruct H1. destruct H1.
+    subst.
+    rewrite List.app_comm_cons in H.
+    rewrite backend_keys_dist in H.
+    crush.
+    rewrite cons_app in H.
+    rewrite List.app_assoc in H.
+    apply distinct_rotate_rev in H.
+    simpl in H.
+    inversion H; subst.
+    crush.
+  - assumption.
+Qed.
+
+Lemma distinct_ops :
+  forall b1 b2 n os os0 rs0 term0,
+  well_typed (C (b1 ++ <<n; os>> :: b2) os0 rs0 term0) ->
+  distinct os.
+Proof using.
+  induction os; intros; eauto.
+  assert (well_typed (C (b1 ++ << n; os >> :: b2) os0 rs0 term0)).
+  {
+    inv H.
+    split.
+    - crush.
+    - unfold config_labels in H1.
+      rewrite backend_labels_dist in H1.
+      simpl in H1.
+      unfold backend_labels at 2 in H1.
+      destruct a.
+      simpl in H1.
+      rewrite <- List.app_assoc in H1.
+      apply distinct_rotate_rev in H1.
+      rewrite cons_app in H1.
+      apply distinct_concat in H1.
+      destruct H1.
+      crush.
+      unfold backend_labels at 2.
+      simpl.
+      crush.
+  }
+  apply IHos in H0.
+  eapply distinct_many.
+  - instantiate (1:=os).
+    instantiate (1:=a).
+    reflexivity.
+  - intro.
+    inv H.
+    unfold config_labels in H3.
+    apply distinct_concat in H3.
+    destruct H3.
+    apply List.in_split in H1.
+    destruct H1. destruct H1.
+    subst.
+    rewrite List.app_comm_cons in H.
+    rewrite backend_labels_dist in H.
+    apply distinct_concat in H.
+    destruct H.
+    unfold backend_labels in H1.
+    simpl in H1.
+    destruct a.
+    rewrite ostream_labels_dist in H1.
+    simpl in H1.
+    assert (n0 :: (ostream_labels x ++ n0 :: ostream_labels x0) ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) = (n0 :: ostream_labels x) ++ n0 :: ostream_labels x0 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2)) by crush.
+    rewrite H4 in H1; clear H4.
+    apply distinct_rotate_rev in H1.
+    simpl in H1.
+    inversion H1.
+    crush.
+  - assumption.
+Qed.
+
 Lemma target_unique :
   forall b b' b1 b2 b3 b4 k v os os0 rs0 t0,
   well_typed (C b os0 rs0 t0) ->
@@ -861,8 +1046,14 @@ Lemma target_unique :
   (b1 = b3 /\ b2 = b4).
 Proof using.
   intros.
-  subst.
-Admitted.
+  eapply distinct_center with (l:=b).
+  eapply distinct_nodes; eauto.
+  instantiate (1:=b').
+  assumption.
+  instantiate (1:=<<N k v; os>>).
+  assumption.
+  crush.
+Qed.
 Hint Resolve target_unique.
 
 Lemma op_unique :
@@ -873,9 +1064,43 @@ Lemma op_unique :
   os = os1 ++ lop :: os2 ->
   os' = os3 ++ lop :: os4 ->
   (os1 = os3 /\ os2 = os4).
-Proof.
-Admitted.
+Proof using.
+  intros.
+  apply distinct_center with (l:=os) (l':=os') (x:=lop); eauto; crush.
+  apply distinct_ops with (term0:=t0) (rs0:=rs0) (os0:=os0) (b1:=b1) (b2:=b2) (n:=n).
+  crush.
+Qed.
 Hint Resolve op_unique.
+
+Axiom unique_lop :
+  forall os l op op' n b1 b2 os0 rs0 term0,
+  well_typed (C (b1 ++ <<n; os>> :: b2) os0 rs0 term0) ->
+  In (l ->> op) os ->
+  In (l ->> op') os ->
+  op = op'.
+
+Lemma op_unique' :
+  forall b n b1 b2 op l op' os os' os1 os2 os3 os4 os0 rs0 t0,
+  well_typed (C b os0 rs0 t0) ->
+  b = b1 ++ <<n; os>> :: b2 ->
+  os = os' ->
+  os = os1 ++ l ->> op :: os2 ->
+  os' = os3 ++ l ->> op' :: os4 ->
+  (os1 = os3 /\ os2 = os4 /\ op = op').
+Proof using.
+  intros.
+  assert (op = op') by (eapply unique_lop with (b1:=b1) (b2:=b2) (l:=l) (op:=op) (op':=op'); subst; eauto; crush).
+  split; try split; try assumption; try reflexivity; subst.
+  eapply op_unique with (os1:=os1) (os2:=os2) (os3:=os3) (os4:=os4); eauto.
+  eapply op_unique with (os1:=os1) (os2:=os2) (os3:=os3) (os4:=os4); eauto.
+Qed.
+
+Axiom unique_key :
+  forall k v os v' os' b os0 rs0 term0,
+  well_typed (C b os0 rs0 term0) ->
+  In <<N k v; os>> b ->
+  In <<N k v'; os'>> b ->
+  v = v' /\ os = os'.
 
 Lemma target_unique' :
   forall b b' b1 b2 b3 b4 k v v' os' os os0 rs0 t0,
@@ -886,8 +1111,13 @@ Lemma target_unique' :
   (b1 = b3 /\ b2 = b4 /\ v = v' /\ os = os').
 Proof using.
   intros.
+  assert (v = v') by (eapply unique_key with (k:=k) (v:=v) (v':=v') (os:=os) (os':=os'); eauto; subst; crush).
+  assert (os = os') by (eapply unique_key with (k:=k) (v:=v) (v':=v') (os:=os) (os':=os'); eauto; subst; crush).
   subst.
-Admitted.
+  split; try split; try split; try assumption; try reflexivity.
+  eapply target_unique with (b1:=b1) (b2:=b2) (b3:=b3) (b4:=b4); eauto.
+  eapply target_unique with (b1:=b1) (b2:=b2) (b3:=b3) (b4:=b4); eauto.
+Qed.
 Hint Resolve target_unique.
 
 Lemma target_same_or_different :
@@ -898,7 +1128,7 @@ Lemma target_same_or_different :
   (b1 = b3 /\ b2 = b4 /\ k = k' /\ v = v' /\ os = os') \/
   (exists (b' : backend) b'' b''', b = b' ++ <<N k v; os>> :: b'' ++ <<N k' v'; os'>> :: b''') \/
   (exists (b' : backend) b'' b''', b = b' ++ <<N k' v'; os'>> :: b'' ++ <<N k v; os>> :: b''').
-Proof.
+Proof using.
   intros.
   destruct (Nat.eq_dec k k') as [keq|kneq].
   - rewrite keq in *. clear keq.
@@ -933,14 +1163,46 @@ Proof.
 Qed.
 
 Lemma op_same_or_different :
-  forall os os1 os2 os3 os4 lop lop',
+  forall b1 b2 n os0 rs0 term0 os os1 os2 os3 os4 lop lop',
+  well_typed (C (b1 ++ <<n;os>> :: b2) os0 rs0 term0) ->
   os = os1 ++ lop :: os2 ->
   os = os3 ++ lop' :: os4 ->
   (os1 = os3 /\ os2 = os4 /\ lop = lop') \/
   (exists (os' : ostream) os'' os''', os = os' ++ lop :: os'' ++ lop' :: os''') \/
   (exists (os' : ostream) os'' os''', os = os' ++ lop' :: os'' ++ lop :: os''').
 Proof.
-Admitted.
+  intros.
+  destruct lop as [l op].
+  destruct lop' as [l' op'].
+  destruct (Nat.eq_dec l l') as [leq|lneq].
+  - subst.
+    left.
+    eapply op_unique' with (os1:=os1) (os2:=os2) in H1; eauto.
+    split; try split; crush.
+  - assert (In (l' ->> op') (os1 ++ l ->> op :: os2)) by crush.
+    apply List.in_app_or in H2.
+    destruct H2.
+    + right.
+      right.
+      apply List.in_split in H2.
+      destruct H2.
+      destruct H2.
+      subst.
+      assert ((x ++ l' ->> op' :: x0) ++ l ->> op :: os2 = x ++ l' ->> op' :: x0 ++ l ->> op :: os2) by crush.
+      eauto.
+    + right.
+      left.
+      apply List.in_split in H2.
+      destruct H2.
+      destruct H2.
+      {
+      destruct x.
+      - crush.
+      - inversion H2.
+        crush.
+        eauto.
+      }
+Qed.
 
 
 Ltac ssame := subst; match goal with
@@ -993,24 +1255,6 @@ Proof using.
     crush.
 Qed.
 
-Lemma frontend_rstream_extension :
-  forall rs t t' lr,
-  C [] [] rs t --> C [] [] rs t' ->
-  C [] [] (lr :: rs) t --> C [] [] (lr :: rs) t'.
-Proof.
-  (* TODO *)
-  (* intros rs t t' lr H. *)
-  (* inversion H; ssame. *)
-  (* - destruct os; crush. *)
-  (* - inv H3. *)
-  (*   eauto. *)
-  (* - inv H3. *)
-  (*   eapply S_App1. *)
-  (*   eauto. *)
-  (*   apply S_ *)
-Admitted.
-Hint Resolve frontend_rstream_extension.
-
 Lemma frontend_no_value :
   forall rs t t' s ty te,
   C [] [] rs t --> C [] [] rs t' ->
@@ -1022,6 +1266,7 @@ Proof using.
   - crush.
   - crush.
   - crush.
+  - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
@@ -1044,8 +1289,23 @@ Proof using.
   - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
+  - destruct b1; crush.
 Qed.
 Hint Resolve frontend_no_value'.
+
+Lemma frontend_rstream_extension :
+  forall rs t t' lr,
+  C [] [] rs t --> C [] [] rs t' ->
+  C [] [] (lr :: rs) t --> C [] [] (lr :: rs) t'.
+Proof.
+  induction t; intros.
+  inversion H; subst; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
+  - admit.
+  - apply frontend_no_value' in H; crush.
+  - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
+  - apply frontend_no_value' in H; crush.
+Admitted.
+Hint Resolve frontend_rstream_extension.
 
 Axiom app_reduce :
   forall rs t t' t'',
@@ -1087,6 +1347,18 @@ Proof using.
 (* Qed. *)
 Admitted.
 Hint Resolve frontend_deterministic.
+
+Lemma lc_getpay :
+  forall cx cy cz os rs term k v l os1 b1 b2,
+  well_typed cx ->
+  cx = C (b1 ++ <<N k v; l ->> getpay k :: os1>> :: b2) os rs term ->
+  cy = C (b1 ++ <<N k v; os1>> :: b2) os (l ->>> v :: rs) term ->
+  cx --> cy ->
+  cx --> cz ->
+  cy -v cz.
+Proof using.
+Admitted.
+Hint Resolve lc_getpay.
 
 Lemma lc_prop :
   forall cx cy cz os rs term n1 n2 l op os1 os2 b1 b2,
@@ -1172,6 +1444,8 @@ Proof using.
       * instantiate (1:= C ((b0 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n n0; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
         one_step. eapply S_Prop; crush.
       * crush.
+  (* S_GetPay *)
+  - eauto.
   (* S_Last *)
   - destruct b2.
     + assert (b1 ++ [<< n1; l ->> op :: os1 >>; << n2; os2 >>] = b1 ++ [<< n1; l ->> op :: os1 >>] ++ [<< n2; os2 >>]) by crush.
@@ -1391,6 +1665,8 @@ Proof using.
     * eapply S_Inc; crush.
     * eapply S_App2; crush.
     * crush.
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app v1 t2')).
     * eapply S_Last; crush.
@@ -1445,6 +1721,8 @@ Proof using.
     * eapply S_Inc; crush.
     * eapply S_App; crush.
     * crush.
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (#[ x := v2] t12)).
     * eapply S_Last; crush.
@@ -1496,6 +1774,8 @@ Proof using.
     * eapply S_Inc; crush.
     * eapply S_Emit; crush.
     * crush.
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   + gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ [l ->> op]) (l0 ->>> final op0 :: rs0) (t_result l)).
     * eapply S_Last; crush.
@@ -1551,6 +1831,8 @@ Proof using.
     * eapply S_Inc; crush.
     * eapply S_App1; crush.
     * crush.
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app t1' t2)).
     * eapply S_Last; crush.
@@ -1601,6 +1883,8 @@ Proof using.
       { inv H1. eapply S_Inc with (b1:=<< n1; os1 ++ [l ->> op] >> :: b1); crush. }
       { inv H1. eapply S_First; crush. }
       { crush. }
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   + crush.
     {
@@ -1702,6 +1986,8 @@ Proof using.
           one_step. eapply S_Inc; crush.
         * crush.
     }
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   +
     {
@@ -1870,6 +2156,8 @@ Proof using.
     * crush.
   (* S_Inc *)
   + eauto.
+  (* S_GetPay *)
+  + eauto.
   (* S_Last *)
   +
     {
@@ -1933,7 +2221,7 @@ Proof using.
       (* Same target *)
       + destruct H1; destruct H4; destruct H5; subst.
         {
-        apply op_same_or_different with (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (lop:=l ->> inc incby ks) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (lop':=l0 ->> inc incby0 ks0) in H6.
+        eapply op_same_or_different with (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (lop:=l ->> inc incby ks) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (lop':=l0 ->> inc incby0 ks0) in H6; eauto.
         - destruct H6; destruct H0; try destruct H1.
           (* Same first lop *)
           + inv H1. inv H4. crush.
@@ -2005,7 +2293,6 @@ Proof using.
                 one_step. eapply S_FuseInc; crush.
               - crush.
               }
-          - crush.
         }
       (* First first *)
       + destruct H0; destruct H0; destruct H0.
@@ -2091,6 +2378,8 @@ Proof using.
       + crush.
     }
   (* S_Inc *)
+  + subst; eauto.
+  (* S_GetPay *)
   + subst; eauto.
   (* S_Last *)
   + ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
