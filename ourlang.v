@@ -1318,7 +1318,7 @@ Lemma frontend_rstream_extension :
 Proof.
   induction t; intros.
   inversion H; subst; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
-  - admit.
+  - (* choose how app reduces *) admit.
   - apply frontend_no_value' in H; crush.
   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
   - apply frontend_no_value' in H; crush.
