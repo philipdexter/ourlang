@@ -1169,7 +1169,7 @@ Lemma op_same_or_different :
   (os1 = os3 /\ os2 = os4 /\ lop = lop') \/
   (exists (os' : ostream) os'' os''', os = os' ++ lop :: os'' ++ lop' :: os''') \/
   (exists (os' : ostream) os'' os''', os = os' ++ lop' :: os'' ++ lop :: os''').
-Proof.
+Proof using.
   intros.
   destruct lop as [l op].
   destruct lop' as [l' op'].
