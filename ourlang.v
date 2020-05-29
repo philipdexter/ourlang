@@ -1097,12 +1097,85 @@ Proof using.
 Qed.
 Hint Resolve op_unique.
 
-Axiom unique_lop :
+Lemma unique_lop :
   forall os l op op' n b1 b2 os0 rs0 term0,
   well_typed (C (b1 ++ <<n; os>> :: b2) os0 rs0 term0) ->
   In (l ->> op) os ->
   In (l ->> op') os ->
   op = op'.
+Proof using.
+  intros os l op op' n b1 b2 os0 rs0 term0 WT Inop Inop'.
+  apply List.in_split in Inop.
+  destruct Inop.
+  destruct H.
+  subst.
+  apply List.in_app_or in Inop'.
+  destruct Inop'.
+  - apply List.in_split in H.
+    destruct H.
+    destruct H.
+    subst.
+    exfalso.
+    inversion WT.
+    unfold config_labels in H0.
+    simpl in *.
+    rewrite backend_labels_dist in H0.
+    unfold backend_labels at 2 in H0.
+    simpl in H0.
+    rewrite ostream_labels_dist in H0.
+    simpl in H0.
+    repeat (rewrite <- List.app_assoc in H0).
+    apply distinct_concat in H0.
+    destruct H0.
+    apply distinct_rotate_rev in H2.
+    rewrite ostream_labels_dist in H2.
+    unfold ostream_labels at 2 in H2.
+    simpl in H2.
+    clear H1 H H0.
+    rewrite -> List.app_comm_cons in H2.
+    apply distinct_concat in H2.
+    destruct H2.
+    clear H0.
+    apply distinct_rotate in H.
+    apply distinct_concat in H.
+    destruct H.
+    inv H0.
+    crush.
+  - apply List.in_inv in H.
+    destruct H.
+    + crush.
+    + exfalso.
+      apply List.in_split in H.
+      destruct H.
+      destruct H.
+      subst.
+      inversion WT.
+      clear H1 H WT.
+      unfold config_labels in H0.
+      simpl in H0.
+      rewrite backend_labels_dist in H0.
+      apply distinct_concat in H0.
+      destruct H0.
+      apply distinct_concat in H.
+      destruct H.
+      unfold backend_labels in H1.
+      simpl in H1.
+      rewrite ostream_labels_dist in H1.
+      clear H0.
+      rewrite List.app_comm_cons in H1.
+      rewrite ostream_labels_dist in H1.
+      apply distinct_concat in H1.
+      destruct H1.
+      apply distinct_concat in H0.
+      destruct H0.
+      clear H H0 H1.
+      simpl in H2.
+      apply distinct_rotate in H2.
+      apply distinct_concat in H2.
+      destruct H2.
+      inv H0.
+      crush.
+Qed.
 
 Lemma op_unique' :
   forall b n b1 b2 op l op' os os' os1 os2 os3 os4 os0 rs0 t0,
@@ -1120,12 +1193,71 @@ Proof using.
   eapply op_unique with (os1:=os1) (os2:=os2) (os3:=os3) (os4:=os4); eauto.
 Qed.
 
-Axiom unique_key :
+Lemma unique_key :
   forall k v os v' os' b os0 rs0 term0,
   well_typed (C b os0 rs0 term0) ->
   In <<N k v; os>> b ->
   In <<N k v'; os'>> b ->
   v = v' /\ os = os'.
+Proof using.
+  intros k v os v' os' b os0 rs0 term0 WT Inb Inb'.
+  apply List.in_split in Inb'.
+  destruct Inb'.
+  destruct H.
+  subst.
+  inversion WT.
+  clear H0 H1 WT.
+  apply List.in_app_or in Inb.
+  destruct Inb.
+  - apply List.in_split in H0.
+    destruct H0.
+    destruct H0.
+    subst.
+    unfold config_keys in H.
+    simpl in H.
+    apply distinct_concat in H.
+    destruct H.
+    clear H0.
+    rewrite backend_keys_dist in H.
+    rewrite backend_keys_dist in H.
+    simpl in H.
+    apply distinct_rotate_rev in H.
+    rewrite List.app_comm_cons in H.
+    apply distinct_concat in H.
+    destruct H.
+    clear H0.
+    apply distinct_rotate in H.
+    apply distinct_concat in H.
+    destruct H.
+    clear H.
+    inv H0.
+    crush.
+  - apply List.in_inv in H0.
+    + destruct H0.
+      * crush.
+      * exfalso.
+        apply List.in_split in H0.
+        destruct H0.
+        destruct H0.
+        subst.
+        unfold config_keys in H.
+        simpl in H.
+        apply distinct_concat in H.
+        destruct H.
+        clear H0.
+        rewrite backend_keys_dist in H.
+        apply distinct_concat in H.
+        destruct H.
+        clear H.
+        simpl in H0.
+        rewrite backend_keys_dist in H0.
+        simpl in H0.
+        apply distinct_rotate in H0.
+        apply distinct_concat in H0.
+        destruct H0.
+        inv H0.
+        crush.
+Qed.
 
 Lemma target_unique' :
   forall b b' b1 b2 b3 b4 k v v' os' os os0 rs0 t0,
