@@ -1311,18 +1311,105 @@ Proof using.
 Qed.
 Hint Resolve frontend_no_value'.
 
-Lemma frontend_rstream_extension :
+Lemma list_not_self :
+  forall {A : Type} (x: A) xs,
+  not (x :: xs = xs).
+Proof using.
+  induction xs; crush.
+Qed.
+
+Lemma app_reduce_choice :
+  forall b os rs t t' t1 t2,
+  t = t_app t1 t2 ->
+  C b os rs t --> C b os rs t' ->
+  (exists t1', (C [] [] rs t1 --> C [] [] rs t1' /\ C b os rs t --> C b os rs (t_app t1' t2))) \/
+  (value t1 /\ (exists t2', C [] [] rs t2 --> C [] [] rs t2' /\ C b os rs t --> C b os rs (t_app t1 t2'))) \/
+  (value t2 /\ (exists x T t12, t1 = (t_abs x T t12) /\ C b os rs t --> C b os rs (#[x:=t2]t12))).
+Proof using.
+  intros.
+  inversion H0; subst.
+  - inversion H4.
+  - inversion H4.
+  - subst. right. right.
+    split.
+    + crush.
+    + repeat (eapply ex_intro).
+      split.
+      * instantiate (1:=t12).
+        instantiate (1:=T).
+        instantiate (1:=x).
+        crush.
+      * crush.
+  - inv H4.
+    left.
+    apply ex_intro with t1'.
+    crush.
+  - inv H5.
+    right. left.
+    split.
+    + assumption.
+    + apply ex_intro with t2'.
+      crush.
+  - inv H6.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+  - inv H5.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+  - inv H5.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+  - inv H5.
+    exfalso.
+    apply List.app_inv_head in H1.
+    inv H1.
+    rewrite <- H3 in H12.
+    apply List.remove_In in H12.
+    assumption.
+  - inv H5.
+    apply List.app_inv_head in H1.
+    exfalso.
+    inv H1.
+    eapply list_not_self.
+    eauto.
+  - inv H5.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+  - inv H4.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+  - inv H5.
+    apply List.app_inv_head in H1.
+    inv H1.
+    exfalso.
+    eapply list_not_self.
+    eauto.
+Qed.
+
+
+Axiom frontend_rstream_extension :
   forall rs t t' lr,
   C [] [] rs t --> C [] [] rs t' ->
   C [] [] (lr :: rs) t --> C [] [] (lr :: rs) t'.
-Proof.
-  induction t; intros.
-  inversion H; subst; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
-  - (* choose how app reduces *) admit.
-  - apply frontend_no_value' in H; crush.
-  - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4).
-  - apply frontend_no_value' in H; crush.
-Admitted.
+(* TODO *)
+(* Proof. *)
+(*   induction t; intros. *)
+(*   inversion H; subst; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4). *)
+(*   - apply app_reduce_choice with (t1:=t1) (t2:=t2) in H; try reflexivity. *)
+(*     destruct H. *)
+(*     + destruct H. *)
+(*       destruct H. *)
+(*       apply IHt1 with (lr:=lr0) in H. *)
+
+(*   - apply frontend_no_value' in H; crush. *)
+(*   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4). *)
+(*   - apply frontend_no_value' in H; crush. *)
+(* Admitted. *)
 Hint Resolve frontend_rstream_extension.
 
 Lemma unique_result :
@@ -1384,6 +1471,25 @@ Axiom app_reduce :
   forall rs t t' t'',
   C [] [] rs (t_app t t') --> C [] [] rs (t_app t'' t') ->
   C [] [] rs t --> C [] [] rs t''.
+(* TODO *)
+(* Proof using. *)
+(*   intros rs t t' t'' R. *)
+(*   inversion R; subst. *)
+(*   - inv H2. *)
+(*     subst. *)
+(*     inv H4. *)
+(*   - inv H2. *)
+(*     assumption. *)
+(*   - inv H3. *)
+(*     apply no_refl in H7. *)
+(*     crush. *)
+(*   - inv H2. *)
+(*   - destruct b1; crush. *)
+(*   - destruct b1; crush. *)
+(*   - destruct b1; crush. *)
+(*   - destruct b1; crush. *)
+(*   - destruct b1; crush. *)
+(* Qed. *)
 
 Lemma frontend_deterministic :
   forall t rs t',
@@ -1984,6 +2090,15 @@ Proof using.
   + apply frontend_no_value' in H0; crush.
   (* S_App2 *)
   + apply frontend_deterministic with (t':=t2'0) in t2t2'; crush.
+    inversion WT.
+    clear cxcy cxcz H0 H1 Vv1.
+    split.
+    * crush.
+    * crush.
+      apply distinct_concat in H3.
+      destruct H3.
+      apply distinct_concat in H1.
+      crush.
   (* S_Empty *)
   + gotw (C [] os' (l ->>> final op :: rs0) (t_app v1 t2')).
     * eapply S_Empty; crush.
@@ -2151,6 +2266,15 @@ Proof using.
   + eauto.
   (* S_App1 *)
   + apply frontend_deterministic with (t':=t1'0) in t1t1'; crush.
+    inversion WT.
+    clear cxcy cxcz H0 H1.
+    split.
+    * crush.
+    * crush.
+      apply distinct_concat in H2.
+      destruct H2.
+      apply distinct_concat in H1.
+      crush.
   (* S_App2 *)
   + eauto.
   (* S_Empty *)
