@@ -158,7 +158,6 @@ Hint Unfold get_payload.
 
 Reserved Notation "c1 '-->' c2" (at level 40).
 
-(* TODO s_app1 and s_app2 need to allow emit (don't use [] for result of ostream) *)
 Inductive step : config -> config -> Prop :=
 (* frontend *)
 | S_Emit : forall c b os rs t_lop l op,
@@ -173,15 +172,15 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs (t_app (t_abs x T t12) v2) ->
     value v2 ->
     c --> C b os rs (#[x:=v2]t12)
-| S_App1 : forall c b os rs t1 t1' t2,
+| S_App1 : forall c b os os' rs t1 t1' t2,
     c = C b os rs (t_app t1 t2) ->
-    C [] [] rs t1 --> C [] [] rs t1' ->
-    c --> C b os rs (t_app t1' t2)
-| S_App2 : forall c b os rs v1 t2' t2,
+    C [] [] rs t1 --> C [] os' rs t1' ->
+    c --> C b (os ++ os') rs (t_app t1' t2)
+| S_App2 : forall c b os os' rs v1 t2' t2,
     c = C b os rs (t_app v1 t2) ->
     value v1 ->
-    C [] [] rs t2 --> C [] [] rs t2' ->
-    c --> C b os rs (t_app v1 t2')
+    C [] [] rs t2 --> C [] os' rs t2' ->
+    c --> C b (os ++ os') rs (t_app v1 t2')
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term,
     c = C [] os rs term ->
@@ -666,6 +665,12 @@ Axiom fresh :
   c = C b os rs (t_emit (l ->> op)) ->
   well_typed c ->
   well_typed (C b (os ++ [l ->> op]) rs (t_label l)).
+Axiom fresh' :
+  forall c b os os' rs t1 t2 t',
+  c = C b os rs (t_app t1 t2) ->
+  well_typed c ->
+  well_typed (C b (os ++ os') rs t').
+
 
 Lemma cons_app :
   forall {A: Type} (x : A) xs,
@@ -687,7 +692,11 @@ Proof using.
   - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
   (* S_App auto handled *)
   (* S_App1 auto handled *)
+  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
+  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
   (* S_App2 auto handled *)
+  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
+  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
@@ -1272,11 +1281,11 @@ Proof using.
 Qed.
 
 Lemma frontend_no_value :
-  forall rs t t' s ty te,
-  C [] [] rs t --> C [] [] rs t' ->
+  forall rs os t t' s ty te,
+  C [] [] rs t --> C [] os rs t' ->
   ~ (t =  t_abs s ty te).
 Proof using.
-  intros rs t t' s ty te H.
+  intros rs os t t' s ty te H.
   inversion H; ssame.
   - crush.
   - crush.
@@ -1292,13 +1301,13 @@ Qed.
 Hint Resolve frontend_no_value.
 
 Lemma frontend_no_value' :
-  forall rs t t',
-  C [] [] rs t --> C [] [] rs t' ->
+  forall rs os t t',
+  C [] [] rs t --> C [] os rs t' ->
   ~ (value t).
 Proof using.
-  intros rs t t' H.
+  intros rs os'' t t' H.
   inversion H; ssame.
-  - destruct os; crush.
+  - crush. inversion H0.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
@@ -1322,8 +1331,8 @@ Lemma app_reduce_choice :
   forall b os rs t t' t1 t2,
   t = t_app t1 t2 ->
   C b os rs t --> C b os rs t' ->
-  (exists t1', (C [] [] rs t1 --> C [] [] rs t1' /\ C b os rs t --> C b os rs (t_app t1' t2))) \/
-  (value t1 /\ (exists t2', C [] [] rs t2 --> C [] [] rs t2' /\ C b os rs t --> C b os rs (t_app t1 t2'))) \/
+  (exists os' t1', (C [] [] rs t1 --> C [] os' rs t1' /\ C b os rs t --> C b (os ++ os') rs (t_app t1' t2))) \/
+  (value t1 /\ (exists os' t2', C [] [] rs t2 --> C [] os' rs t2' /\ C b os rs t --> C b (os ++ os') rs (t_app t1 t2'))) \/
   (value t2 /\ (exists x T t12, t1 = (t_abs x T t12) /\ C b os rs t --> C b os rs (#[x:=t2]t12))).
 Proof using.
   intros.
@@ -1342,13 +1351,15 @@ Proof using.
       * crush.
   - inv H4.
     left.
+    apply ex_intro with os'.
     apply ex_intro with t1'.
     crush.
   - inv H5.
     right. left.
     split.
     + assumption.
-    + apply ex_intro with t2'.
+    + apply ex_intro with os'.
+      apply ex_intro with t2'.
       crush.
   - inv H6.
     exfalso.
@@ -1393,9 +1404,9 @@ Qed.
 
 
 Axiom frontend_rstream_extension :
-  forall rs t t' lr,
-  C [] [] rs t --> C [] [] rs t' ->
-  C [] [] (lr :: rs) t --> C [] [] (lr :: rs) t'.
+  forall rs os t t' lr,
+  C [] [] rs t --> C [] os rs t' ->
+  C [] [] (lr :: rs) t --> C [] os (lr :: rs) t'.
 (* TODO *)
 (* Proof. *)
 (*   induction t; intros. *)
@@ -1468,9 +1479,9 @@ Proof using.
 Qed.
 
 Axiom app_reduce :
-  forall rs t t' t'',
-  C [] [] rs (t_app t t') --> C [] [] rs (t_app t'' t') ->
-  C [] [] rs t --> C [] [] rs t''.
+  forall rs os t t' t'',
+  C [] [] rs (t_app t t') --> C [] os rs (t_app t'' t') ->
+  C [] [] rs t --> C [] os rs t''.
 (* TODO *)
 (* Proof using. *)
 (*   intros rs t t' t'' R. *)
@@ -1492,35 +1503,52 @@ Axiom app_reduce :
 (* Qed. *)
 
 Lemma frontend_deterministic :
-  forall t rs t',
+  forall t rs os t',
   well_typed (C [] [] rs t) ->
-  C [] [] rs t --> C [] [] rs t' ->
-  forall t'',
-  C [] [] rs t --> C [] [] rs t'' ->
-  t' = t''.
+  C [] [] rs t --> C [] os rs t' ->
+  forall t'' os',
+  C [] [] rs t --> C [] os' rs t'' ->
+  t' = t'' /\ os = os'.
 Proof using.
 (* TODO uncomment, takes too long so temp commenting *)
-(*   induction t; intros rs t' WT; intros. *)
-(*   inversion H; inversion H0; try (inv H5; eapply frontend_no_value in H15; crush); try (inv H5; eapply frontend_no_value in H16; crush); try (destruct b1; crush); try (destruct os; crush). *)
-(*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
+(*   induction t; intros rs os0 t' WT; intros.
+  inversion H; inversion H0; try (inv H5; eapply frontend_no_value in H15; crush); try (inv H5; eapply frontend_no_value in H16; crush); try (destruct b1; crush); try (destruct os; crush).
+  - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
 (*     + eapply frontend_no_value' in H7. assert (value (t_abs x T t12)) by constructor. crush. *)
-(*     + assert (C [] [] rs t0 --> C [] [] rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
-(*       apply IHt1 with (t':=t1'0) in H7; crush. *)
-(*       clear H0 H7 H2 H14 H1 IHt1 IHt2 H. *)
+(*     + eapply frontend_no_value' in H7. assert (value (t_abs x T t12)) by constructor. crush. *)
+(*     + assert (C [] [] rs t0 --> C [] os'1 rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
+(*       apply IHt1 with (os:=os'1) (t':=t1'0) in H7; crush. *)
+(*       clear H0 H7 H14 H1 IHt1 IHt2 H. *)
 (*       inversion WT. *)
 (*       split. *)
 (*       * crush. *)
 (*       * crush. *)
 (*     + eapply frontend_no_value' in H7; crush. *)
-(*     + inv H12. inv H5. eapply frontend_no_value' in H8; crush. *)
-(*     + inv H12. inv H5. eapply frontend_no_value' in H15; crush. *)
-(*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) in H8; crush. *)
+(*       assert (C [] [] rs t0 --> C [] os'1 rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
+(*       assert (C [] [] rs t0 --> C [] os0 rs t1') by (apply app_reduce with (t':=t3); assumption). *)
+(*       apply IHt1 with (os:=os0) (t':=t1') in H1; crush. *)
+(*       inversion WT. *)
+(*       split. *)
+(*       * crush. *)
+(*       * crush. *)
+(*     + eapply frontend_no_value' in H7; crush. *)
+(*     + eapply frontend_no_value' in H7; crush. *)
+(*     + inv H5. inv H12. apply frontend_no_value' in H8; crush. *)
+(*     + inv H12. inv H5. apply frontend_no_value' in H8; crush. *)
+(*     + inv H12. inv H5. apply frontend_no_value' in H15; crush. *)
+(*     + inv H12. inv H5. apply frontend_no_value' in H15; crush. *)
+(*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
+(*       inversion WT. *)
+(*       split; crush. *)
+(*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
+(*       inversion WT. *)
+(*       split; crush. *)
 (*     Unshelve. *)
-(*     split; crush. *)
-(*     inversion WT. *)
-(*     unfold config_labels in H3. *)
-(*     simpl in H3. *)
-(*     crush. *)
+(*     auto. *)
+(*     auto. *)
+(*     auto. *)
+(*     auto. *)
+(*     auto. *)
 (*     auto. *)
 (*     auto. *)
 (*     auto. *)
@@ -1533,11 +1561,14 @@ Proof using.
 (*     auto. *)
 (*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
 (*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
+(*     + inversion H0; crush; try (destruct b1; crush). *)
+(*     + inversion H0; crush; try (destruct b1; crush). *)
+(*       inv H3. *)
+(*       crush. *)
 (*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
 (*     inv H0; try (destruct os; crush); try (destruct b1; crush); try (inv H3). *)
 (*     + assert (v = v0) by (eapply unique_result; eauto). *)
-(*       crush. *)
-(*     + inv H4. *)
+(*       split; crush. *)
 (*   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H4); try (inv H5). *)
 (* Qed. *)
 Admitted.
@@ -1607,9 +1638,9 @@ Proof using.
   (* S_App *)
   - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (#[ x := v2] t12)); eauto.
   (* S_App1 *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (t_app t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app t1' t2)); eauto.
   (* S_App2 *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (t_app v1 t2')); eauto.
+  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app v1 t2')); eauto.
   (* S_Empty *)
   - destruct b1; crush.
   (* S_First *)
@@ -1823,9 +1854,9 @@ Proof using.
   (* S_App *)
   - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 (#[ x := v2] t12)); eauto.
   (* S_App1 *)
-  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 (t_app t1' t2)); eauto.
+  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ os') rs0 (t_app t1' t2)); eauto.
   (* S_App2 *)
-  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 (t_app v1 t2')); eauto.
+  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ os') rs0 (t_app v1 t2')); eauto.
   (* S_Empty *)
   - destruct b1; crush.
   (* S_First *)
@@ -2069,17 +2100,17 @@ Qed.
 Hint Resolve lc_prop.
 
 Lemma lc_app2 :
-  forall cx cy cz b os rs v1 t2 t2',
+  forall cx cy cz b os os0 rs v1 t2 t2',
   well_typed cx ->
   cx = C b os rs (t_app v1 t2) ->
-  cy = C b os rs (t_app v1 t2') ->
+  cy = C b (os ++ os0) rs (t_app v1 t2') ->
   cx --> cy ->
   cx --> cz ->
   value v1 ->
-  C [] [] rs t2 --> C [] [] rs t2' ->
+  C [] [] rs t2 --> C [] os0 rs t2' ->
   cy -v cz.
 Proof using.
-  intros cx cy cz b os rs v1 t2 t2' WT Heqcx Heqcy cxcy cxcz.
+  intros cx cy cz b os os'' rs v1 t2 t2' WT Heqcx Heqcy cxcy cxcz.
   intros Vv1 t2t2'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
@@ -2089,7 +2120,7 @@ Proof using.
   (* S_App1 *)
   + apply frontend_no_value' in H0; crush.
   (* S_App2 *)
-  + apply frontend_deterministic with (t':=t2'0) in t2t2'; crush.
+  + apply frontend_deterministic with (os:=os') (t':=t2'0) in t2t2'; crush.
     inversion WT.
     clear cxcy cxcz H0 H1 Vv1.
     split.
@@ -2100,34 +2131,34 @@ Proof using.
       apply distinct_concat in H1.
       crush.
   (* S_Empty *)
-  + gotw (C [] os' (l ->>> final op :: rs0) (t_app v1 t2')).
+  + gotw (C [] (os' ++ os'') (l ->>> final op :: rs0) (t_app v1 t2')).
     * eapply S_Empty; crush.
     * eapply S_App2; crush.
     * crush.
   (* S_First *)
-  + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app v1 t2')).
+  + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') (os' ++ os'') rs0 (t_app v1 t2')).
     * eapply S_First; crush.
     * eapply S_App2; crush.
     * crush.
   (* S_Add *)
-  + gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app v1 t2')).
+  + gotw (C (<< N k v; [] >> :: b0) (os' ++ os'') (l ->>> final (add k v) :: rs0) (t_app v1 t2')).
     * eapply S_Add; crush.
     * eapply S_App2; crush.
     * crush.
   (* S_Inc *)
-  + gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app v1 t2')).
+  + gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) (os0 ++ os'') rs0 (t_app v1 t2')).
     * eapply S_Inc; crush.
     * eapply S_App2; crush.
     * crush.
   (* S_GetPay *)
   + eauto.
   (* S_Last *)
-  + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app v1 t2')).
+  + gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ os'') (l ->>> final op :: rs0) (t_app v1 t2')).
     * eapply S_Last; crush.
     * eapply S_App2; crush.
     * crush.
   (* S_FuseInc *)
-  + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_app v1 t2')).
+  + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ os'') (l' ->>> final (inc incby' ks) :: rs0) (t_app v1 t2')).
     * eapply S_FuseInc; crush.
     * eapply S_App2; crush.
     * crush.
@@ -2248,16 +2279,16 @@ Qed.
 Hint Resolve lc_emit.
 
 Lemma lc_app1 :
-  forall cx cy cz b os rs t1 t2 t1',
+  forall cx cy cz b os os'' rs t1 t2 t1',
   well_typed cx ->
   cx = C b os rs (t_app t1 t2) ->
-  cy = C b os rs (t_app t1' t2) ->
+  cy = C b (os ++ os'') rs (t_app t1' t2) ->
   cx --> cy ->
   cx --> cz ->
-  C [] [] rs t1 --> C [] [] rs t1' ->
+  C [] [] rs t1 --> C [] os'' rs t1' ->
   cy -v cz.
 Proof using.
-  intros cx cy cz b os rs t1 t2 t1' WT Heqcx Heqcy cxcy cxcz.
+  intros cx cy cz b os os'' rs t1 t2 t1' WT Heqcx Heqcy cxcy cxcz.
   intros t1t1'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
@@ -2265,7 +2296,7 @@ Proof using.
   (* S_App *)
   + eauto.
   (* S_App1 *)
-  + apply frontend_deterministic with (t':=t1'0) in t1t1'; crush.
+  + apply frontend_deterministic with (os:=os') (t':=t1'0) in t1t1'; crush.
     inversion WT.
     clear cxcy cxcz H0 H1.
     split.
@@ -2278,34 +2309,34 @@ Proof using.
   (* S_App2 *)
   + eauto.
   (* S_Empty *)
-  + gotw (C [] os' (l ->>> final op :: rs0) (t_app t1' t2)).
+  + gotw (C [] (os' ++ os'') (l ->>> final op :: rs0) (t_app t1' t2)).
     * eapply S_Empty; crush.
     * eapply S_App1; crush.
     * crush.
   (* S_First *)
-  + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') os' rs0 (t_app t1' t2)).
+  + gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') (os' ++ os'') rs0 (t_app t1' t2)).
     * eapply S_First; crush.
     * eapply S_App1; crush.
     * crush.
   (* S_Add *)
-  + gotw (C (<< N k v; [] >> :: b0) os' (l ->>> final (add k v) :: rs0) (t_app t1' t2)).
+  + gotw (C (<< N k v; [] >> :: b0) (os' ++ os'') (l ->>> final (add k v) :: rs0) (t_app t1' t2)).
     * eapply S_Add; crush.
     * eapply S_App1; crush.
     * crush.
   (* S_Inc *)
-  + gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os0 rs0 (t_app t1' t2)).
+  + gotw (C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) (os0 ++ os'') rs0 (t_app t1' t2)).
     * eapply S_Inc; crush.
     * eapply S_App1; crush.
     * crush.
   (* S_GetPay *)
   + eauto.
   (* S_Last *)
-  + gotw (C (b1 ++ [<< n1; os1' >>]) os0 (l ->>> final op :: rs0) (t_app t1' t2)).
+  + gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ os'') (l ->>> final op :: rs0) (t_app t1' t2)).
     * eapply S_Last; crush.
     * eapply S_App1; crush.
     * crush.
   (* S_FuseInc *)
-  + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_app t1' t2)).
+  + gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ os'') (l' ->>> final (inc incby' ks) :: rs0) (t_app t1' t2)).
     * eapply S_FuseInc; crush.
     * eapply S_App1; crush.
     * crush.
