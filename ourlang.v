@@ -1780,7 +1780,117 @@ Proof using.
   exists x, t0. auto.
 Qed.
 
-(* TODO need lemma saying that if frontend goes with b and os then it could go with those as empty too *)
+Inductive frontend_reduction : config -> config -> Prop :=
+| FR_Emit : forall c b os rs t_lop l op,
+    c = C b os rs t_lop ->
+    t_lop = t_emit (l ->> op) ->
+    frontend_reduction c (C b (os ++ [l ->> op]) rs (t_label l))
+| FR_Claim : forall c b os rs l v,
+    c = C b os rs (t_downarrow (t_label l)) ->
+    In (l ->>> v) rs ->
+    frontend_reduction c (C b os rs (t_result v))
+| FR_Ctx_Downarrow : forall c b os os' rs t t',
+    c = C b os rs (t_downarrow t) ->
+    C [] [] rs t --> C [] os' rs t' ->
+    frontend_reduction c (C b (os ++ os') rs (t_downarrow t'))
+| FR_App : forall c b os rs x T t12 v2,
+    c = C b os rs (t_app (t_abs x T t12) v2) ->
+    value v2 ->
+    frontend_reduction c (C b os rs (#[x:=v2]t12))
+| FR_App1 : forall c b os os' rs t1 t1' t2,
+    c = C b os rs (t_app t1 t2) ->
+    C [] [] rs t1 --> C [] os' rs t1' ->
+    frontend_reduction c (C b (os ++ os') rs (t_app t1' t2))
+| FR_App2 : forall c b os os' rs v1 t2' t2,
+    c = C b os rs (t_app v1 t2) ->
+    value v1 ->
+    C [] [] rs t2 --> C [] os' rs t2' ->
+    frontend_reduction c (C b (os ++ os') rs (t_app v1 t2')).
+Hint Constructors frontend_reduction.
+
+Ltac destructor := repeat (match goal with
+                           | [H : exists _, _ |- _] => destruct H
+                           | [H : _ /\ _ |- _] => destruct H
+                           end).
+
+Lemma frontend_reduction_to_step :
+  forall c c',
+  frontend_reduction c c' ->
+  c --> c'.
+Proof using.
+  intros c c' H.
+  inversion H; eauto.
+Qed.
+Hint Resolve frontend_reduction_to_step.
+
+Lemma step_to_frontend_reduction :
+  forall c c',
+    ((exists b os rs t_lop l op,
+      c = C b os rs t_lop /\
+      c' = C b (os ++ [l ->> op]) rs (t_label l) /\
+      t_lop = t_emit (l ->> op)) \/
+     (exists b os rs l v,
+      c = C b os rs (t_downarrow (t_label l)) /\
+      c' = C b os rs (t_result v) /\
+      In (l ->>> v) rs) \/
+     (exists b os rs t os' t',
+      c = C b os rs (t_downarrow t) /\
+      c' = C b (os ++ os') rs (t_downarrow t') /\
+      C [] [] rs t --> C [] os' rs t') \/
+     (exists b os rs x T t12 v2,
+      c = C b os rs (t_app (t_abs x T t12) v2) /\
+      c' = C b os rs (#[x:=v2]t12) /\
+      value v2) \/
+     (exists b os rs t1 t2 os' t1',
+      c = C b os rs (t_app t1 t2) /\
+      c' = C b (os ++ os') rs (t_app t1' t2) /\
+      C [] [] rs t1 --> C [] os' rs t1') \/
+     (exists b os rs v1 t2 os' t2',
+      c = C b os rs (t_app v1 t2) /\
+      c' = C b (os ++ os') rs (t_app v1 t2') /\
+      value v1 /\
+      C [] [] rs t2 --> C [] os' rs t2')) ->
+  frontend_reduction c c'.
+Proof using.
+  intros c c' H.
+  destruct H; destructor; subst; eauto.
+  destruct H; destructor; subst; eauto.
+  destruct H; destructor; subst; eauto.
+  destruct H; destructor; subst; eauto.
+  destruct H; destructor; subst; eauto.
+Qed.
+Hint Resolve step_to_frontend_reduction.
+
+Lemma frontend_backend_agnostic :
+  forall b os rs t os' t',
+  frontend_reduction (C b os rs t) (C b (os ++ os') rs t') ->
+  forall b' os'',
+  frontend_reduction (C b' os'' rs t) (C b' (os'' ++ os') rs t').
+Proof using.
+  intros b os rs t os' t' FR.
+  inversion FR; ssame; intros.
+  - apply List.app_inv_head in H0; subst; eauto.
+  - assert (os' = []).
+    {
+    induction os.
+    + crush.
+    + rewrite <- List.app_nil_r in H0 at 1. apply List.app_inv_head in H0. auto.
+    }
+    subst.
+    apply FR_Claim with l; crush.
+  - apply List.app_inv_head in H0; subst; eauto.
+  - assert (os' = []).
+    {
+    induction os.
+    + crush.
+    + rewrite <- List.app_nil_r in H0 at 1. apply List.app_inv_head in H0. auto.
+    }
+    subst.
+    apply FR_App with (T:=T); crush.
+  - apply List.app_inv_head in H0; subst; eauto.
+  - apply List.app_inv_head in H0; subst; eauto.
+Qed.
+Hint Resolve frontend_backend_agnostic.
 
 Theorem progress : forall b os rs t T,
   well_typed (C b os rs t) ->
@@ -1794,9 +1904,9 @@ Proof with eauto.
   - inversion H.
   (* t_app *)
   - right. destruct IHET1...
-    + admit.
+    + inversion WT. split; crush.
     + destruct IHET2...
-      * admit.
+      * inversion WT. split; crush.
       * assert (exists x0 t0, t1 = t_abs x0 T11 t0).
         {
           apply canonical_forms_fun in ET1.
@@ -1814,26 +1924,23 @@ Proof with eauto.
         reflexivity.
         assumption.
       * destruct H0.
-        inversion H0; subst; admit.
-    + admit.
-    (* + destruct H. *)
-    (*   inversion H; subst. *)
-    (*   inversion H0; subst. *)
-    (*   * exists (C b0 (os0 ++ [l ->> op]) rs0 (t_app (t_label l) t2)). *)
-    (*     eapply S_App1; eauto. *)
-    (*     admit. *)
-    (*   * inv H0. *)
-    (*     exists (C b0 (os0 ++ os0) rs0 (t_app (t_result v) t2)). *)
-    (*     eapply S_App1; eauto. *)
-  (* t_downarrow *)
+        inversion H0; ssame; eauto.
+    + destruct H.
+      inversion H; ssame; eauto.
   - destruct IHET...
     + inversion WT. split; crush.
     + right.
-      admit.
+      inversion H; subst.
+      (* TODO not well_typed *)
+      * admit.
+      (* TODO not well_typed *)
+      * admit.
+      (* TODO need to know that well_typed means that all label are accounted for *)
+      * admit.
     + right.
       destruct H.
       destruct x.
-      admit.
+      inversion H; ssame; eauto.
 Admitted.
 
 
