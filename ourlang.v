@@ -1396,6 +1396,7 @@ Proof using.
     crush.
   - unfold config_labels.
     crush.
+  - eauto.
   }
   apply IHb in H0.
   eapply distinct_many.
@@ -1449,6 +1450,7 @@ Proof using.
       unfold backend_labels at 2.
       simpl.
       crush.
+    - eauto.
   }
   apply IHos in H0.
   eapply distinct_many.
@@ -1473,7 +1475,7 @@ Proof using.
     rewrite ostream_labels_dist in H1.
     simpl in H1.
     assert (n0 :: (ostream_labels x ++ n0 :: ostream_labels x0) ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) = (n0 :: ostream_labels x) ++ n0 :: ostream_labels x0 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2)) by crush.
-    rewrite H4 in H1; clear H4.
+    rewrite H5 in H1; clear H5.
     apply distinct_rotate_rev in H1.
     simpl in H1.
     inversion H1.
@@ -1546,14 +1548,14 @@ Proof using.
     repeat (rewrite <- List.app_assoc in H0).
     apply distinct_concat in H0.
     destruct H0.
-    apply distinct_rotate_rev in H2.
-    rewrite ostream_labels_dist in H2.
-    unfold ostream_labels at 2 in H2.
-    simpl in H2.
+    apply distinct_rotate_rev in H3.
+    rewrite ostream_labels_dist in H3.
+    unfold ostream_labels at 2 in H3.
+    simpl in H3.
     clear H1 H H0.
-    rewrite -> List.app_comm_cons in H2.
-    apply distinct_concat in H2.
-    destruct H2.
+    rewrite -> List.app_comm_cons in H3.
+    apply distinct_concat in H3.
+    destruct H3.
     clear H0.
     apply distinct_rotate in H.
     apply distinct_concat in H.
@@ -1589,9 +1591,9 @@ Proof using.
       destruct H0.
       clear H H0 H1.
       simpl in H2.
-      apply distinct_rotate in H2.
-      apply distinct_concat in H2.
-      destruct H2.
+      apply distinct_rotate in H3.
+      apply distinct_concat in H3.
+      destruct H3.
       inv H0.
       crush.
 Qed.
@@ -1981,7 +1983,7 @@ Lemma unique_result :
   r = r'.
 Proof using.
   intros b os rs t l r r' WT In1 In2.
-  inversion WT.
+  inversion WT as [c H H0 TT H1].
   apply List.in_split in In1.
   destruct In1. destruct H2.
   subst.
@@ -2019,12 +2021,12 @@ Proof using.
     destruct H0.
     apply distinct_concat in H1.
     destruct H1.
-    apply distinct_rotate_rev in H2.
-    rewrite List.app_comm_cons in H2.
-    rewrite List.app_assoc in H2.
-    apply distinct_rotate_rev in H2.
-    simpl in H2.
-    inversion H2.
+    apply distinct_rotate_rev in H3.
+    rewrite List.app_comm_cons in H3.
+    rewrite List.app_assoc in H3.
+    apply distinct_rotate_rev in H3.
+    simpl in H3.
+    inversion H3.
     crush.
 Qed.
 
@@ -2069,17 +2071,20 @@ Proof using.
 (*       apply IHt1 with (os:=os'1) (t':=t1'0) in H7; crush. *)
 (*       clear H0 H7 H14 H1 IHt1 IHt2 H. *)
 (*       inversion WT. *)
-(*       split. *)
-(*       * crush. *)
-(*       * crush. *)
+(*       split; eauto. *)
+(*       subst. *)
+(*       destruct H1. *)
+(*       inv H1. *)
+(*       eauto. *)
 (*     + eapply frontend_no_value' in H7; crush. *)
 (*       assert (C [] [] rs t0 --> C [] os'1 rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
 (*       assert (C [] [] rs t0 --> C [] os0 rs t1') by (apply app_reduce with (t':=t3); assumption). *)
 (*       apply IHt1 with (os:=os0) (t':=t1') in H1; crush. *)
 (*       inversion WT. *)
-(*       split. *)
-(*       * crush. *)
-(*       * crush. *)
+(*       split; eauto. *)
+(*       destruct H5. *)
+(*       inv H5. *)
+(*       eauto. *)
 (*     + eapply frontend_no_value' in H7; crush. *)
 (*     + eapply frontend_no_value' in H7; crush. *)
 (*     + inv H5. inv H12. apply frontend_no_value' in H8; crush. *)
@@ -2088,10 +2093,16 @@ Proof using.
 (*     + inv H12. inv H5. apply frontend_no_value' in H15; crush. *)
 (*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
 (*       inversion WT. *)
-(*       split; crush. *)
+(*       split; eauto. *)
+(*       destruct H3. *)
+(*       inv H3. *)
+(*       eauto. *)
 (*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
 (*       inversion WT. *)
-(*       split; crush. *)
+(*       split; eauto. *)
+(*       destruct H3. *)
+(*       inv H3. *)
+(*       eauto. *)
 (*     Unshelve. *)
 (*     auto. *)
 (*     auto. *)
@@ -2135,6 +2146,8 @@ Proof using.
 (*       * simpl in *. *)
 (*         apply IHt with (os:=os'1) (t':=t') in H7; crush. *)
 (*         inversion WT; split; crush. *)
+(*         inv H3. *)
+(*         eauto. *)
 (* Qed. *)
 Admitted.
 Hint Resolve frontend_deterministic.
@@ -2164,14 +2177,14 @@ Proof using.
   - assert (t' = t'0 /\ os' = os'0).
     {
     apply frontend_deterministic with (rs:=rs0) (t:=t0).
-    - inversion WT.
+    - inversion WT as [c H1 H2 TT].
       split.
       + crush.
-      + crush.
-        apply distinct_concat in H2.
+      + apply distinct_concat in H2.
         destruct H2.
-        apply distinct_concat in H3.
+        apply distinct_concat in H4.
         crush.
+      + destruct TT as [T TT]; inv TT; eauto.
     - assumption.
     - assumption.
     }
@@ -2180,8 +2193,10 @@ Proof using.
   (* S_App1 auto handled *)
   (* S_App2 auto handled *)
   (* S_Empty *)
-  - gotw (C [] (os'0 ++ os') (l ->>> final op :: rs0) (t_downarrow t')); eauto.
-    eapply S_Empty; crush.
+  - gotw (C [] (os'0 ++ os') (l ->>> final op :: rs0) (t_downarrow t')).
+    + eapply S_Empty; eauto. crush.
+    + eapply S_Ctx_Downarrow; eauto.
+    + crush.
   (* S_First *)
   - gotw (C (<< n1; os1 ++ [l ->> op] >> :: b') (os'0 ++ os') rs0 (t_downarrow t')); eauto.
   (* S_Add *)
@@ -2197,6 +2212,21 @@ Proof using.
   - gotw (C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ os') (l' ->>> final (inc incby' ks) :: rs0) (t_downarrow t')); eauto.
   (* S_Prop *)
   - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ os') rs0 (t_downarrow t')); eauto.
+Unshelve.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
 Qed.
 Hint Resolve lc_ctx_downarrow.
 
@@ -2460,6 +2490,15 @@ Proof using.
           one_step. eapply S_GetPay; crush.
         - crush.
         }
+Unshelve.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
 Qed.
 Hint Resolve lc_getpay.
 
@@ -2728,6 +2767,13 @@ Proof using.
           one_step. eapply S_Prop; crush.
         - crush.
         }
+Unshelve.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
 Qed.
 Hint Resolve lc_prop.
 
@@ -2761,8 +2807,9 @@ Proof using.
     * crush.
       apply distinct_concat in H3.
       destruct H3.
-      apply distinct_concat in H1.
+      apply distinct_concat in H3.
       crush.
+    * destruct H4. inv H0. eauto.
   (* S_Empty *)
   + gotw (C [] (os' ++ os'') (l ->>> final op :: rs0) (t_app v1 t2')).
     * eapply S_Empty; crush.
@@ -2940,8 +2987,9 @@ Proof using.
     * crush.
       apply distinct_concat in H2.
       destruct H2.
-      apply distinct_concat in H1.
+      apply distinct_concat in H2.
       crush.
+    * destruct H3. inv H0. eauto.
   (* S_App2 *)
   + eauto.
   (* S_Empty *)
