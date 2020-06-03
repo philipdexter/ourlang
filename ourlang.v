@@ -1084,6 +1084,14 @@ Proof with eauto.
       eauto.
 Qed.
 
+Definition normal_form (c : config) : Prop :=
+  ~ exists c', c --> c'.
+
+Definition stuck c : Prop :=
+match c with
+| C b os rs t => normal_form  c /\ ~ value t
+end.
+
 (* ****** end typing *)
 
 Ltac apply_preservation :=
@@ -1233,6 +1241,66 @@ Proof using.
     apply distinct_app_comm in H7.
     crush.
 Qed.
+
+
+(* ****** typing *)
+
+Corollary soundness : forall c c',
+  well_typed c ->
+  (exists n, c -->*[n] c') ->
+  ~(stuck c').
+Proof using.
+  intros c c' WT.
+  inversion WT.
+  destruct H1.
+  rename H1 into Hhas_type.
+  intros Hmulti.
+  unfold stuck.
+  destruct Hmulti as [n Hmulti]. subst.
+  induction Hmulti.
+  - unfold config_has_type in Hhas_type.
+    subst.
+    destruct x0 as [b os rs t].
+    intros [Hnf Hnv].
+    eapply progress with (b:=b) (os:=os) (rs:=rs) in Hhas_type; try assumption.
+    destruct Hhas_type; eauto.
+  - assert (well_typed y) by (apply well_typed_preservation in H1; crush).
+    apply preservation with (T:=x) in H1.
+    + apply IHHmulti in H1; eauto.
+      inversion H2.
+      assumption.
+      inversion H2.
+      assumption.
+    + assumption.
+Qed.
+
+Theorem unique_types : forall Gamma t T T',
+  has_type Gamma t T ->
+  has_type Gamma t T' ->
+  T = T'.
+Proof using.
+  intros Gamma t.
+  generalize dependent Gamma.
+  induction t; intros Gamma T T' HT HT'.
+  - inv HT; inv HT'; crush.
+  - inv HT; inv HT'.
+    apply IHt1 with (T':=Arrow T0 T') in H2; eauto.
+    apply IHt2 with (T':=T0) in H4; eauto.
+    subst.
+    inv H2.
+    reflexivity.
+  - inv HT; inv HT'.
+    apply IHt with (T':=T0) in H4; eauto.
+    crush.
+  - inv HT; inv HT'.
+  - inv HT; inv HT'.
+  - inv HT; inv HT'; eauto.
+  - inv HT; inv HT'.
+    eapply IHt in H1; eauto.
+    inv H1; eauto.
+Qed.
+
+(* ****** end typing *)
 
 Reserved Notation "c1 '==' c2" (at level 40).
 Inductive cequiv : config -> config -> Prop :=
