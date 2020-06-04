@@ -168,21 +168,25 @@ Hint Unfold get_payload.
 Definition context := partial_map type.
 
 Inductive has_type : context -> term -> type -> Prop :=
-  | T_Var : forall Gamma x T,
-      Gamma x = Some T ->
-      has_type Gamma (t_var x) T
-  | T_Abs : forall Gamma x T11 T12 t12,
-      has_type (x |-> T11 ; Gamma) t12 T12 ->
-      has_type Gamma (t_abs x T11 t12) (Arrow T11 T12)
-  | T_App : forall T11 T12 Gamma t1 t2,
-      has_type Gamma t1 (Arrow T11 T12) ->
-      has_type Gamma t2 T11 ->
-      has_type Gamma (t_app t1 t2) T12
-  | T_Result : forall r Gamma,
-       has_type Gamma (t_result r) Result
-  | T_Label : forall ft t Gamma,
-       has_type Gamma t (Label ft) ->
-       has_type Gamma (t_downarrow t) ft.
+| T_Var : forall Gamma x T,
+    Gamma x = Some T ->
+    has_type Gamma (t_var x) T
+| T_Abs : forall Gamma x T11 T12 t12,
+    has_type (x |-> T11 ; Gamma) t12 T12 ->
+    has_type Gamma (t_abs x T11 t12) (Arrow T11 T12)
+| T_App : forall T11 T12 Gamma t1 t2,
+    has_type Gamma t1 (Arrow T11 T12) ->
+    has_type Gamma t2 T11 ->
+    has_type Gamma (t_app t1 t2) T12
+| T_Result : forall r Gamma,
+     has_type Gamma (t_result r) Result
+| T_Downarrow : forall ft t Gamma,
+     has_type Gamma t (Label ft) ->
+     has_type Gamma (t_downarrow t) ft
+| T_Label : forall l Gamma,
+     has_type Gamma (t_label l) (Label Result).
+(* | T_Emit : forall l op Gamma, *)
+(*      has_type Gamma (t_emit (l ->> op)) (Label key). *)
 Hint Constructors has_type.
 
 
@@ -705,6 +709,17 @@ Hint Rewrite List.app_assoc.
 Hint Rewrite List.app_nil_r.
 Hint Rewrite List.app_comm_cons.
 
+Definition get_config_rstream (c : config) :=
+match c with
+| C _ _ rs _ => rs
+end.
+(* TODO *)
+Axiom all_labels :
+  forall c,
+  well_typed c ->
+  forall l,
+  (exists v, In (l ->>> v) (get_config_rstream c)) \/ (exists n c' v, c -->*[n] c' /\ In (l ->>> v) (get_config_rstream c')).
+
 Axiom fresh :
   forall c b os rs l op,
   c = C b os rs (t_emit (l ->> op)) ->
@@ -931,7 +946,23 @@ Proof with eauto.
         destruct H2.
         inv H2.
         inv H5.
-      * inv ET.
+      * apply all_labels with (l:=label) in WT.
+        {
+        destruct WT.
+        - destruct H0.
+          eauto.
+        - destruct H0.
+          destruct H0.
+          destruct H0.
+          destruct x.
+          + destruct H0.
+            assert (x0 = C b os rs (t_downarrow (t_label label))) by (inv H0; crush).
+            subst.
+            eauto.
+          + destruct H0.
+            inv H0.
+            eauto.
+        }
     + right.
       destruct H.
       destruct x.
@@ -1078,7 +1109,7 @@ Proof with eauto.
     + eauto.
     + eauto.
   - inversion HE; subst; ssame; crush.
-    + inv HT.
+    + inv HT. eauto.
     + assert (C b0 os0 rs0 t0 --> C b0 (os0 ++ os') rs0 t'0) by (eapply frontend_agnostic in H0; eauto).
       apply H1 in H2.
       eauto.
@@ -1293,7 +1324,7 @@ Proof using.
     apply IHt with (T':=T0) in H4; eauto.
     crush.
   - inv HT; inv HT'.
-  - inv HT; inv HT'.
+  - inv HT; inv HT'; eauto.
   - inv HT; inv HT'; eauto.
   - inv HT; inv HT'.
     eapply IHt in H1; eauto.
