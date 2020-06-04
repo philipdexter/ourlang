@@ -2160,95 +2160,53 @@ Lemma frontend_deterministic :
   C [] [] rs t --> C [] os' rs t'' ->
   t' = t'' /\ os = os'.
 Proof using.
-(* TODO uncomment, takes too long so temp commenting *)
-(*   induction t; intros rs os0 t' WT; intros. *)
-(*   inversion H; inversion H0; try (inv H5; eapply frontend_no_value in H15; crush); try (inv H5; eapply frontend_no_value in H16; crush); try (destruct b1; crush); try (destruct os; crush). *)
-(*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
-(*     + eapply frontend_no_value' in H7. assert (value (t_abs x T t12)) by constructor. crush. *)
-(*     + eapply frontend_no_value' in H7. assert (value (t_abs x T t12)) by constructor. crush. *)
-(*     + assert (C [] [] rs t0 --> C [] os'1 rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
-(*       apply IHt1 with (os:=os'1) (t':=t1'0) in H7; crush. *)
-(*       clear H0 H7 H14 H1 IHt1 IHt2 H. *)
-(*       inversion WT. *)
-(*       split; eauto. *)
-(*       subst. *)
-(*       destruct H1. *)
-(*       inv H1. *)
-(*       eauto. *)
-(*     + eapply frontend_no_value' in H7; crush. *)
-(*       assert (C [] [] rs t0 --> C [] os'1 rs t1'0) by (apply app_reduce with (t':=t3); assumption). *)
-(*       assert (C [] [] rs t0 --> C [] os0 rs t1') by (apply app_reduce with (t':=t3); assumption). *)
-(*       apply IHt1 with (os:=os0) (t':=t1') in H1; crush. *)
-(*       inversion WT. *)
-(*       split; eauto. *)
-(*       destruct H5. *)
-(*       inv H5. *)
-(*       eauto. *)
-(*     + eapply frontend_no_value' in H7; crush. *)
-(*     + eapply frontend_no_value' in H7; crush. *)
-(*     + inv H5. inv H12. apply frontend_no_value' in H8; crush. *)
-(*     + inv H12. inv H5. apply frontend_no_value' in H8; crush. *)
-(*     + inv H12. inv H5. apply frontend_no_value' in H15; crush. *)
-(*     + inv H12. inv H5. apply frontend_no_value' in H15; crush. *)
-(*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
-(*       inversion WT. *)
-(*       split; eauto. *)
-(*       destruct H3. *)
-(*       inv H3. *)
-(*       eauto. *)
-(*     + inv H13. inv H5. apply IHt2 with (t':=t2'0) (os:=os'1) in H8; crush. *)
-(*       inversion WT. *)
-(*       split; eauto. *)
-(*       destruct H3. *)
-(*       inv H3. *)
-(*       eauto. *)
-(*     Unshelve. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*     auto. *)
-(*   - inversion H; inversion H0; try (destruct os; crush); try (inv H11; inv H4; eapply frontend_no_value' in H14; crush); try (inv H12; inv H4; eapply frontend_no_value' in H15; crush); try (destruct b1; crush). *)
-(*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
-(*     + inversion H0; crush; try (destruct b1; crush). *)
-(*     + inversion H0; crush; try (destruct b1; crush). *)
-(*       inv H3. *)
-(*       crush. *)
-(*   - inv H; try (destruct os; crush); try (inv H4); try (inv H5); try (destruct b1; crush). *)
-(*   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H4); try (inv H5). *)
-(*   - inversion H; subst; ssame; try (destruct b1; inversion H1). *)
-(*     + inversion H0; ssame; try (destruct b1; inversion H1). *)
-(*       * assert (v = v0) by (eapply unique_result; eauto). *)
-(*         crush. *)
-(*       * simpl in *. *)
-(*         exfalso. *)
-(*         apply frontend_no_value' in H9. *)
-(*         crush. *)
-(*     + simpl in *. *)
-(*       inversion H0; ssame; try (destruct b1; inversion H1). *)
-(*       * exfalso. *)
-(*         apply frontend_no_value' in H7. *)
-(*         crush. *)
-(*       * simpl in *. *)
-(*         apply IHt with (os:=os'1) (t':=t') in H7; crush. *)
-(*         inversion WT; split; crush. *)
-(*         inv H3. *)
-(*         eauto. *)
-(* Qed. *)
-Admitted.
+  induction t; intros rs os0 t' WT; intros.
+  - inv H; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+    + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H4; inv H5. eauto.
+      * inv H4; inv H5. apply frontend_no_value' in H9. exfalso. eauto.
+      * inv H4; inv H6. apply frontend_no_value' in H10. exfalso. eauto.
+    + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H4; inv H5. apply frontend_no_value' in H7. exfalso. eauto.
+      * inv H4; inv H5. eapply IHt1 in H7; eauto. destruct H7. subst; split; eauto.
+        inversion WT.
+        split; try split; eauto.
+        destruct H3.
+        inv H3.
+        eauto.
+      * inv H4; inv H6. apply frontend_no_value' in H7. exfalso. eauto.
+    + inversion H0; subst; try solve [inv H4; inv H5]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H4; inv H5. apply frontend_no_value' in H8. exfalso. eauto.
+      * inv H4; inv H5. apply frontend_no_value' in H10. exfalso. eauto.
+      * inv H5; inv H6. eapply IHt2 in H8; eauto. destruct H8. subst; split; eauto.
+        inversion WT.
+        split; try split; eauto.
+        destruct H3.
+        inv H3.
+        eauto.
+  - apply frontend_no_value' in H; exfalso; eauto.
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+    inv H4.
+    inversion H0; subst; try solve [inv H4; inv H5]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+    ssame. split; eauto.
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+    + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H4; inv H5.
+        eapply unique_result with (r':=v0) in H7; eauto.
+      * inv H4; inv H5. apply frontend_no_value' in H9. exfalso. eauto.
+      * inv H6.
+    + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H4; inv H5. apply frontend_no_value' in H7; exfalso; eauto.
+      * inv H4; inv H5. apply IHt with (os:=os'0) (t':=t'0) in H9; eauto. destruct H9. subst. split; eauto.
+        inversion WT; split; try split; eauto.
+        destruct H3.
+        inv H3.
+        eauto.
+      * inv H6.
+Qed.
 Hint Resolve frontend_deterministic.
 
 Ltac fnv := match goal with
