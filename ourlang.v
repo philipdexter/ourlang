@@ -95,8 +95,37 @@ Inductive term : Type :=
 | t_emit : labeled_operation -> term
 | t_label : label -> term
 | t_result : result -> term
-| t_downarrow : term -> term.
+| t_downarrow : term -> term
+| t_emit_ot : label -> operation_term -> term
+with
+operation_term : Type :=
+(* | ot_inc : term -> keyset -> operation_term *)
+(* | ot_add : term -> payload -> operation_term *)
+| ot_getpay : term -> operation_term.
 Hint Constructors term.
+Hint Constructors operation_term.
+
+Definition emittable ot :=
+match ot with
+| ot_getpay (t_result _) => True
+| _ => False
+end.
+
+Definition ot_to_op : forall (ot : operation_term), emittable ot -> operation.
+refine
+ (fun ot:operation_term =>
+    match ot return emittable ot -> operation with
+    | ot_getpay (t_result k) => fun _ => getpay k
+    | _ => _
+    end).
+intros; inv H.
+intros; inv H.
+intros; inv H.
+intros; inv H.
+intros; inv H.
+intros; inv H.
+intros; inv H.
+Defined.
 
 Inductive value : term -> Prop :=
 | v_abs : forall x T t,
@@ -107,9 +136,6 @@ Inductive value : term -> Prop :=
              value (t_label label).
 Hint Constructors value.
 Definition noop : term := t_result 0.
-
-(* Definition eqb_string (x y : string) : bool := *)
-(*   if string_dec x y then true else false. *)
 
 Reserved Notation "'#[' x ':=' s ']' t" (at level 20).
 
@@ -129,6 +155,8 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_result r
   | t_downarrow t =>
       t_downarrow (#[x:=s] t)
+  | t_emit_ot l (ot_getpay t) =>
+      t_emit_ot l (ot_getpay (#[x:=s] t))
   end
 where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
@@ -199,6 +227,10 @@ Inductive step : config -> config -> Prop :=
 | S_Emit : forall c b os rs t_lop l op,
     c = C b os rs t_lop ->
     t_lop = t_emit (l ->> op) ->
+    c --> C b (os ++ [l ->> op]) rs (t_label l)
+| S_Emit_OT : forall c b os rs l ot op H,
+    c = C b os rs (t_emit_ot l ot) ->
+    op = ot_to_op ot H ->
     c --> C b (os ++ [l ->> op]) rs (t_label l)
 | S_Claim : forall c b os rs l v,
     c = C b os rs (t_downarrow (t_label l)) ->
@@ -358,6 +390,7 @@ match t with
 | t_label _ => []
 | t_result _ => []
 | t_downarrow t => term_keys t
+| t_emit_ot _ (ot_getpay t) => term_keys t
 end.
 Hint Unfold term_keys.
 
@@ -455,6 +488,7 @@ match t with
 | t_label _ => []
 | t_result _ => []
 | t_downarrow t => term_labels t
+| t_emit_ot _ (ot_getpay t) => term_labels t
 end.
 
 Definition config_labels (c : config) :=
@@ -735,6 +769,11 @@ Axiom fresh'' :
   c = C b os rs (t_downarrow t) ->
   well_typed c ->
   well_typed (C b (os ++ os') rs t').
+Axiom fresh''' :
+  forall c b os rs l ot lop,
+  c = C b os rs (t_emit_ot l ot) ->
+  well_typed c ->
+  well_typed (C b (os ++ [lop]) rs (t_label l)).
 
 Lemma cons_app :
   forall {A: Type} (x : A) xs,
@@ -878,6 +917,7 @@ Lemma frontend_agnostic :
 Proof using.
   intros os rs t t' H.
   inversion H; subst; intros; try solve [inv H3; simpl in *; eauto]; try solve [destruct b1; crush].
+  - inv H4; simpl in *; eauto.
   - inv H3; simpl in *; eauto.
     eapply S_Claim; eauto; crush.
   - inv H3. apply S_App with (T:=T); crush.
@@ -967,6 +1007,10 @@ Proof with eauto.
       destruct H.
       destruct x.
       inversion H; ssame; eauto.
+Unshelve.
+assumption.
+assumption.
+assumption.
 Qed.
 
 Inductive appears_free_in : string -> term -> Prop :=
@@ -1141,6 +1185,9 @@ Proof using.
   (* S_Emit *)
   - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
   - apply fresh with (b:=b) (os:=os) (rs:=rs) (l:=l) (op:=op) in H; inv H; crush.
+  (* S_Emit_OT *)
+  - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (ot:=ot) (lop:=l ->> ot_to_op ot H1) in H; inv H; crush.
+  - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (ot:=ot) (lop:=l ->> ot_to_op ot H1) in H; inv H; crush.
   (* S_Claim auto handled *)
   (* S_Ctx_Downarrow *)
   - apply fresh'' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t:=t) (t':=t') in H; inv H; crush.
@@ -1329,6 +1376,7 @@ Proof using.
   - inv HT; inv HT'.
     eapply IHt in H1; eauto.
     inv H1; eauto.
+  - inv HT; inv HT'.
 Qed.
 
 (* ****** end typing *)
@@ -1941,6 +1989,7 @@ Proof using.
   - crush.
   - crush.
   - crush.
+  - crush.
   - destruct b1; crush.
   - destruct b1; crush.
   - destruct b1; crush.
@@ -1957,6 +2006,7 @@ Proof using.
   intros rs os'' t t' H.
   inversion H; ssame.
   - crush. inversion H0.
+  - crush. inversion H1.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
   - unfold not; intros. inversion H0.
@@ -1988,18 +2038,14 @@ Proof using.
   intros.
   inversion H0; subst.
   - inversion H4.
-  - inversion H4.
+  - inversion H5.
   - inversion H4.
   - subst. right. right.
-    split.
-    + crush.
-    + repeat (eapply ex_intro).
-      split.
-      * instantiate (1:=t12).
-        instantiate (1:=T).
-        instantiate (1:=x).
-        crush.
-      * crush.
+    split; crush.
+  - inv H4.
+    right.
+    right.
+    split; eauto.
   - inv H4.
     left.
     apply ex_intro with os'.
@@ -2164,10 +2210,12 @@ Proof using.
   - inv H; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
   - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
     + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H6.
       * inv H4; inv H5. eauto.
       * inv H4; inv H5. apply frontend_no_value' in H9. exfalso. eauto.
       * inv H4; inv H6. apply frontend_no_value' in H10. exfalso. eauto.
     + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H6.
       * inv H4; inv H5. apply frontend_no_value' in H7. exfalso. eauto.
       * inv H4; inv H5. eapply IHt1 in H7; eauto. destruct H7. subst; split; eauto.
         inversion WT.
@@ -2177,6 +2225,7 @@ Proof using.
         eauto.
       * inv H4; inv H6. apply frontend_no_value' in H7. exfalso. eauto.
     + inversion H0; subst; try solve [inv H4; inv H5]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H6.
       * inv H4; inv H5. apply frontend_no_value' in H8. exfalso. eauto.
       * inv H4; inv H5. apply frontend_no_value' in H10. exfalso. eauto.
       * inv H5; inv H6. eapply IHt2 in H8; eauto. destruct H8. subst; split; eauto.
@@ -2194,11 +2243,13 @@ Proof using.
   - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
   - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
     + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H6.
       * inv H4; inv H5.
         eapply unique_result with (r':=v0) in H7; eauto.
       * inv H4; inv H5. apply frontend_no_value' in H9. exfalso. eauto.
       * inv H6.
     + inversion H0; subst; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H6.
       * inv H4; inv H5. apply frontend_no_value' in H7; exfalso; eauto.
       * inv H4; inv H5. apply IHt with (os:=os'0) (t':=t'0) in H9; eauto. destruct H9. subst. split; eauto.
         inversion WT; split; try split; eauto.
@@ -2206,8 +2257,61 @@ Proof using.
         inv H3.
         eauto.
       * inv H6.
+  - inversion H; subst; try solve [inv H4]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+    + inversion H0; subst; try solve [inv H6]; try solve [inv H5]; try solve [match goal with | [H : ?b ++ _ = [] |- _] => destruct b; inv H end].
+      * inv H5; inv H7.
+        split; crush.
+        assert (H1 = H2).
+        {
+        destruct ot0; destruct t; crush.
+        }
+        crush.
+      * inv H7.
 Qed.
 Hint Resolve frontend_deterministic.
+
+Lemma lc_emit_ot :
+  forall cx cy cz b os rs l ot op H,
+  well_typed cx ->
+  cx = C b os rs (t_emit_ot l ot) ->
+  cy = C b (os ++ [l ->> op]) rs (t_label l) ->
+  cx --> cy ->
+  cx --> cz ->
+  op = ot_to_op ot H ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b os rs l ot op Hemit WT Heqcx Heqcy cxcy cxcz.
+  intros Hopeq.
+  inversion cxcz; ssame.
+  (* S_Emit auto handled *)
+  (* S_Emit_OT *)
+  - inv H0.
+    assert (Hemit = H) by (destruct ot0; destruct t; crush).
+    subst; eauto.
+  (* S_Claim auto handled *)
+  (* S_Ctx_Downarrow auto handled *)
+  (* S_App auto handled *)
+  (* S_App1 auto handled *)
+  (* S_App2 auto handled *)
+  (* S_Empty *)
+  - gotw (C [] (os' ++ [l ->> ot_to_op ot Hemit]) (l0 ->>> final op0 :: rs0) (t_label l)); simpl; eauto.
+  (* S_First *)
+  - gotw (C (<< n1; os1 ++ [l0 ->> op0] >> :: b') (os' ++ [l ->> ot_to_op ot Hemit]) rs0 (t_label l)); eauto.
+  (* S_Add *)
+  - gotw (C (<< N k v; [] >> :: b0) (os' ++ [l ->> ot_to_op ot Hemit]) (l0 ->>> final (add k v) :: rs0) (t_label l)); simpl; eauto.
+    eapply S_Add with (os:=l0 ->> add k v :: os' ++ [l ->> ot_to_op ot Hemit]); eauto.
+  (* S_Inc *)
+  - gotw (C (b1 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) (os0 ++ [l ->> ot_to_op ot Hemit]) rs0 (t_label l)); eauto.
+  (* S_GetPay *)
+  - gotw (C (b1 ++ << N k v; os1' >> :: b2) (os0 ++ [l ->> ot_to_op ot Hemit]) (l0 ->>> v :: rs0) (t_label l)); eauto.
+  (* S_Last *)
+  - gotw (C (b1 ++ [<< n1; os1' >>]) (os0 ++ [l ->> ot_to_op ot Hemit]) (l0 ->>> final op0 :: rs0) (t_label l)); eauto.
+  (* S_FuseInc *)
+  - gotw (C (b1 ++ << n; os1 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) (os0 ++ [l ->> ot_to_op ot Hemit]) (l' ->>> final (inc incby' ks) :: rs0) (t_label l)); eauto.
+  (* S_Prop *)
+  - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l0 ->> op0] >> :: b2) (os0 ++ [l ->> ot_to_op ot Hemit]) rs0 (t_label l)); eauto.
+Qed.
+Hint Resolve lc_emit_ot.
 
 Ltac fnv := match goal with
             | [H : C [] [] ?rs ?t --> C [] ?os ?rs ?t' |- _] => apply frontend_no_value' in H; crush
@@ -2228,6 +2332,7 @@ Proof using.
   intros tt'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Emit_OT auto handled *)
   (* S_Claim auto handled *)
   - fnv.
   (* S_Ctx_Downarrow *)
@@ -2302,6 +2407,7 @@ Proof using.
   intros RIn.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Emit_OT auto handled *)
   (* S_Claim *)
   - assert (v = v0) by (eapply unique_result; eauto).
     crush.
@@ -2348,6 +2454,8 @@ Proof using.
   inversion cxcz; ssame.
   (* S_Emit *)
   - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ [l0 ->> op]) (l ->>> v :: rs0) (t_label l0)); eauto.
+  (* S_Emit_OT *)
+  - eauto.
   (* S_Claim *)
   - eauto.
   (* S_Ctx_Downarrow *)
@@ -2575,6 +2683,8 @@ Proof using.
   inversion cxcz; ssame.
   (* S_Emit *)
   - gotw (C (b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) (os0 ++ [l0 ->> op0]) rs0 (t_label l0)); eauto.
+  (* S_Emit_OT *)
+  - eauto.
   (* S_Claim *)
   - eauto.
   (* S_Ctx_Downarrow *)
@@ -2849,6 +2959,7 @@ Proof using.
   intros Vv1 t2t2'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Emit_OT auto handled *)
   (* S_Claim auto handled *)
   (* S_Ctx_Downarrow auto handled *)
   (* S_App *)
@@ -2917,6 +3028,7 @@ Proof using.
   intros cx cy cz b os rs x T t12 v2 WT Heqcx Heqcy Vv2 cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Emit_OT auto handled *)
   (* S_Claim auto handled *)
   (* S_Ctx_Downarrow auto handled *)
   (* S_App *)
@@ -2975,6 +3087,7 @@ Proof using.
   inversion cxcz; ssame.
   (* S_Emit *)
   + crush.
+  (* S_Claim_OT auto handled *)
   (* S_Claim auto handled *)
   (* S_CtxDownarrow auto handled *)
   (* S_App auto handled *)
@@ -3031,6 +3144,7 @@ Proof using.
   intros t1t1'.
   inversion cxcz; ssame.
   (* S_Emit auto handled *)
+  (* S_Emit_OT auto handled *)
   (* S_Claim auto handled *)
   (* S_Ctx_Downarrow auto handled *)
   (* S_App *)
@@ -3099,24 +3213,26 @@ Proof using.
   intros cx cy cz rs l op term0 n1 os1 b' os' WT Heqcx Heqcy Hnotnotadd cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit *)
-  + eauto.
+  - eauto.
+  (* S_Emit_OT *)
+  - eauto.
   (* S_Claim *)
-  + eauto.
+  - eauto.
   (* S_Ctx_Downarrow *)
-  + eauto.
+  - eauto.
   (* S_App *)
-  + eauto.
+  - eauto.
   (* S_App1 *)
-  + eauto.
+  - eauto.
   (* S_App2 *)
-  + eauto.
+  - eauto.
   (* S_Empty *)
-  + crush.
+  - crush.
   (* S_First *)
-  + crush.
+  - crush.
   (* S_Add auto handled *)
   (* S_Inc *)
-  + destruct b1; simpl in *.
+  - destruct b1; simpl in *.
     * gotw (C (<< N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b2)  os' rs0 term1).
       { inv H1; eapply S_Inc with (b1:=[]); crush. }
       { inv H1; eapply S_First with (os1:=l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1''); crush. }
@@ -3126,9 +3242,9 @@ Proof using.
       { inv H1. eapply S_First; crush. }
       { crush. }
   (* S_GetPay *)
-  + eauto.
+  - eauto.
   (* S_Last *)
-  + crush.
+  - crush.
     {
     destruct b1; eapply ex_intro; eapply ex_intro; intros.
     (* b1 = [] *)
@@ -3151,7 +3267,7 @@ Proof using.
       + crush.
     }
   (* S_FuseInc *)
-  + destruct b1; simpl in *.
+  - destruct b1; simpl in *.
     (* b1 = [] *)
     * gotw (C (<< n; os0 ++ l0 ->> inc (incby + incby') ks :: os2 ++ [l ->> op] >> :: b2) os' (l' ->>> 0 :: rs0) term1).
       { inv H1. eapply S_FuseInc with (b1:=[]); crush. }
@@ -3163,7 +3279,7 @@ Proof using.
       { inv H1. eapply S_First; crush. }
       { crush. }
   (* S_Prop *)
-  + eauto.
+  - eauto.
 Qed.
 Hint Resolve lc_first.
 
@@ -3180,28 +3296,30 @@ Proof using.
   intros cx cy cz rs term0 l incby ks os1'' b1 b2 k os v WT Heqcx Heqcy HIn cxcy cxcz.
   inversion cxcz; ssame.
   (* S_Emit *)
-  + eauto.
+  - eauto.
+  (* S_Emit_OT *)
+  - eauto.
   (* S_Claim *)
-  + eauto.
+  - eauto.
   (* S_Ctx_Downarrow *)
-  + eauto.
+  - eauto.
   (* S_App *)
-  + eauto.
+  - eauto.
   (* S_App1 *)
-  + eauto.
+  - eauto.
   (* S_App2 *)
-  + eauto.
+  - eauto.
   (* S_Empty *)
-  + crush. destruct b1; crush.
+  - crush. destruct b1; crush.
   (* S_First *)
-  + subst; eauto.
+  - subst; eauto.
   (* S_Add *)
-  + gotw (C (<< N k0 v0; [] >> :: b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> final (add k0 v0) :: rs0) term1).
+  - gotw (C (<< N k0 v0; [] >> :: b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> final (add k0 v0) :: rs0) term1).
     * eapply S_Add; crush.
     * eapply S_Inc with (b1:=<< N k0 v0; [] >> :: b1); crush.
     * crush.
   (* S_Inc *)
-  + rename H1 into H0.
+  - rename H1 into H0.
     rename b3 into b4.
     rename b0 into b3.
     {
@@ -3233,9 +3351,9 @@ Proof using.
         * crush.
     }
   (* S_GetPay *)
-  + eauto.
+  - eauto.
   (* S_Last *)
-  +
+  -
     {
     destruct b2.
     (* b2 = [] *)
@@ -3263,11 +3381,11 @@ Proof using.
       + crush.
     }
   (* S_FuseInc *)
-  + destruct n.
+  - destruct n.
     eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=n) (v':=n0) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
-    - destruct H1. destruct H2. destruct H3. subst.
+    + destruct H1. destruct H2. destruct H3. subst.
       destruct os1.
       * simpl in *.
         inv H4.
@@ -3337,7 +3455,7 @@ Proof using.
           * crush.
         }
     (* First first *)
-    - destruct H0. destruct H0. destruct H0.
+    + destruct H0. destruct H0. destruct H0.
       eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N n n0; os1 ++ l0 ->> inc incby0 ks0 :: l' ->> inc incby' ks0 :: os2 >> :: x1) in H0; crush.
       inv H.
       eapply target_unique with (b1:=x ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
@@ -3348,7 +3466,7 @@ Proof using.
         one_step. eapply S_Inc; crush.
       * crush.
     (* First second *)
-    - destruct H0. destruct H0. destruct H0.
+    + destruct H0. destruct H0. destruct H0.
       eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N n n0; os1 ++ l0 ->> inc incby0 ks0 :: l' ->> inc incby' ks0 :: os2 >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
       eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> inc incby ks :: os1'' >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
@@ -3359,7 +3477,7 @@ Proof using.
         one_step. eapply S_Inc; crush.
       * crush.
   (* S_Prop *)
-  + eauto.
+  - eauto.
 Qed.
 Hint Resolve lc_inc.
 
@@ -3381,23 +3499,25 @@ Proof using.
   assert (H2 : C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os (l' ->>> final (inc incby' ks) :: rs) term0 = cy) by auto.
   inversion cxcz; ssame.
   (* S_Emit *)
-  + eauto.
+  - eauto.
+  (* S_Emit_OT *)
+  - eauto.
   (* S_Claim *)
-  + eauto.
+  - eauto.
   (* S_Ctx_Downarrow *)
-  + eauto.
+  - eauto.
   (* S_App *)
-  + eauto.
+  - eauto.
   (* S_App1 *)
-  + eauto.
+  - eauto.
   (* S_App2 *)
-  + eauto.
+  - eauto.
   (* S_Empty *)
-  + destruct b1; crush.
+  - destruct b1; crush.
   (* S_First *)
-  + eauto.
+  - eauto.
   (* S_Add *)
-  + ssame.
+  - ssame.
     got.
     * instantiate (1:=C (<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os' (l0 ->>> final (add k v) :: l' ->>> final (inc incby' ks) :: rs0) term1).
       one_step. eapply S_Add; crush.
@@ -3405,11 +3525,11 @@ Proof using.
       one_step. apply S_FuseInc with (b:=<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) (b1:=<< N k v; [] >> :: b1); crush.
     * crush.
   (* S_Inc *)
-  + eauto.
+  - eauto.
   (* S_GetPay *)
-  + eauto.
+  - eauto.
   (* S_Last *)
-  +
+  -
     {
     rename b1 into btmp.
     rename b3 into b1.
@@ -3463,7 +3583,7 @@ Proof using.
       + crush.
     }
   (* S_FuseInc *)
-  + destruct n as [k v].
+  - destruct n as [k v].
     destruct n0 as [k' v'].
     {
     eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b3) (b4:=b4) (k:=k) (v:=v) (k':=k') (v':=v') in H1; eauto.
@@ -3568,7 +3688,7 @@ Proof using.
         * crush.
     }
   (* S_Prop *)
-  + eauto.
+  - eauto.
 Qed.
 Hint Resolve lc_fuseinc.
 
@@ -3595,23 +3715,25 @@ Proof using.
   rename Heqcy into H5.
   inversion cxcz.
   (* S_Emit *)
-  + subst; eauto.
+  - subst; eauto.
+  (* S_Emit_OT *)
+  - subst; eauto.
   (* S_Claim *)
-  + eauto.
+  - eauto.
   (* S_Ctx_Downarrow *)
-  + eauto.
+  - eauto.
   (* S_App *)
-  + eauto.
+  - eauto.
   (* S_App1 *)
-  + eauto.
+  - eauto.
   (* S_App2 *)
-  + eauto.
+  - eauto.
   (* S_Empty *)
-  + crush. destruct b1; crush.
+  - crush. destruct b1; crush.
   (* S_First *)
-  + subst; eauto.
+  - subst; eauto.
   (* S_Add *)
-  + subst.
+  - subst.
     {
     destruct b1.
     (* b1 = [] *)
@@ -3632,15 +3754,15 @@ Proof using.
       + crush.
     }
   (* S_Inc *)
-  + subst; eauto.
+  - subst; eauto.
   (* S_GetPay *)
-  + subst; eauto.
+  - subst; eauto.
   (* S_Last *)
-  + ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
+  - ssame. apply List.app_inj_tail in H0. inv H0. inv H1. crush.
   (* S_FuseInc *)
-  + subst; eauto.
+  - subst; eauto.
   (* S_Prop *)
-  + subst; eauto.
+  - subst; eauto.
 Qed.
 Hint Resolve lc_last.
 
