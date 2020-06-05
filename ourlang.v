@@ -179,14 +179,17 @@ Inductive has_type : context -> term -> type -> Prop :=
     has_type Gamma t2 T11 ->
     has_type Gamma (t_app t1 t2) T12
 | T_Result : forall r Gamma,
-     has_type Gamma (t_result r) Result
+    has_type Gamma (t_result r) Result
 | T_Downarrow : forall ft t Gamma,
-     has_type Gamma t (Label ft) ->
-     has_type Gamma (t_downarrow t) ft
+    has_type Gamma t (Label ft) ->
+    has_type Gamma (t_downarrow t) ft
 | T_Label : forall l Gamma,
-     has_type Gamma (t_label l) (Label Result).
-(* | T_Emit : forall l op Gamma, *)
-(*      has_type Gamma (t_emit (l ->> op)) (Label key). *)
+    has_type Gamma (t_label l) (Label Result)
+| T_Emit : forall l op Gamma,
+    has_type Gamma (t_emit (l ->> op)) (Label Result)
+| T_Emit_OT_GetPay : forall l t Gamma,
+    has_type Gamma t Result ->
+    has_type Gamma (t_emit_ot_getpay l t) (Label Result).
 Hint Constructors has_type.
 
 
@@ -984,6 +987,23 @@ Proof with eauto.
       destruct H.
       destruct x.
       inversion H; ssame; eauto.
+  - destruct IHET...
+    + inversion WT. split; crush; eauto.
+    + right.
+      inversion H; subst.
+      * inv WT.
+        destruct H2.
+        inv H2.
+        inv H7.
+      * eapply ex_intro. eapply S_Emit_OT_GetPay; eauto.
+      * inv WT.
+        destruct H2.
+        inv H2.
+        inv H7.
+    + right.
+      destruct H.
+      destruct x.
+      inversion H; ssame; eauto.
 Qed.
 
 Inductive appears_free_in : string -> term -> Prop :=
@@ -1000,8 +1020,11 @@ Inductive appears_free_in : string -> term -> Prop :=
     appears_free_in x t12 ->
     appears_free_in x (t_abs y T11 t12)
 | afi_downarrow : forall x t,
-  appears_free_in x t ->
-  appears_free_in x (t_downarrow t).
+    appears_free_in x t ->
+    appears_free_in x (t_downarrow t)
+| afi_emit_ot_getpay : forall x l t,
+    appears_free_in x t ->
+    appears_free_in x (t_emit_ot_getpay l t).
 Hint Constructors appears_free_in.
 
 Definition closed (t:term) :=
@@ -1103,7 +1126,7 @@ Proof with eauto.
        intros t' HE; subst Gamma; subst;
        try solve [inversion HE; subst; ssame; crush];
        try solve [inversion H].
-  - inversion HE; subst; ssame; crush.
+  - inversion HE; subst; ssame; crush; try solve [eauto].
     + apply substitution_preserves_typing with T11; eauto.
       inversion HT1; crush.
     + eapply T_App.
@@ -1117,19 +1140,15 @@ Proof with eauto.
       eauto.
       apply H3 in H4.
       eauto.
-    + eauto.
-    + eauto.
-    + eauto.
-    + eauto.
-    + eauto.
-    + eauto.
-    + eauto.
-    + eauto.
   - inversion HE; subst; ssame; crush.
     + inv HT. eauto.
     + assert (C b0 os0 rs0 t0 --> C b0 (os0 ++ os') rs0 t'0) by (eapply frontend_agnostic in H0; eauto).
       apply H1 in H2.
       eauto.
+  - inversion HE; subst; ssame; crush.
+    assert (C b0 os0 rs0 t0 --> C b0 (os0 ++ os') rs0 t'0) by (eapply frontend_agnostic in H0; eauto).
+    apply H1 in H2.
+    eauto.
 Qed.
 
 Definition normal_form (c : config) : Prop :=
@@ -1169,13 +1188,13 @@ Proof using.
   (* S_Ctx_Emit_OT_GetPay *)
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t) (os':=os') (t':=t_emit_ot_getpay l t') in H; inv H; crush.
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t) (os':=os') (t':=t_emit_ot_getpay l t') in H; inv H; crush.
-  - inv H1.
+  - inv H1. apply_preservation.
   (* S_App auto handled *)
   (* S_App1 *)
   - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
   - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
   - inv H1. apply_preservation.
-  (* S_App2 auto handled *)
+  (* S_App2 *)
   - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
   - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
   - inv H1. apply_preservation.
@@ -1347,13 +1366,13 @@ Proof using.
   - inv HT; inv HT'.
     apply IHt with (T':=T0) in H4; eauto.
     crush.
-  - inv HT; inv HT'.
+  - inv HT; inv HT'; eauto.
   - inv HT; inv HT'; eauto.
   - inv HT; inv HT'; eauto.
   - inv HT; inv HT'.
     eapply IHt in H1; eauto.
     inv H1; eauto.
-  - inv HT; inv HT'.
+  - inv HT; inv HT'; eauto.
 Qed.
 
 (* ****** end typing *)
@@ -2242,7 +2261,7 @@ Proof using.
       * inv H5; inv H4. apply IHt with (os:=os'1) (t':=t') in H7. crush.
         inv WT.
         destruct H3.
-        split; try split; eauto; inv H3.
+        split; try split; eauto; inv H3; eauto.
         assumption.
 Qed.
 Hint Resolve frontend_deterministic.
@@ -2282,7 +2301,7 @@ Proof using.
     destruct H2.
     apply distinct_concat in H4.
     crush.
-    inv H3.
+    inv H3; eauto.
     assumption.
   (* S_Add *)
   - match_ctx_emit_ot_getpay.
