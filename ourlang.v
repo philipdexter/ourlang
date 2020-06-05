@@ -732,7 +732,6 @@ Axiom all_labels :
   forall l,
   (exists v, In (l ->>> v) (get_config_rstream c)) \/ (exists n c' v, c -->*[n] c' /\ In (l ->>> v) (get_config_rstream c')).
 
-(* TODO this probably can be proven if we add unique frontend labels to well_typed *)
 Axiom fresh :
   forall c b os rs l op,
   c = C b os rs (t_emit (l ->> op)) ->
@@ -921,6 +920,32 @@ auto.
 auto.
 Qed.
 
+Inductive dry_backend : backend -> Prop :=
+| dry_backend_empty : dry_backend []
+| dry_backend_cons : forall s b, dry_backend b -> get_ostream s = [] -> dry_backend (s::b).
+Hint Constructors dry_backend.
+Inductive dry : config -> Prop :=
+| dry_ : forall b rs v, dry_backend b -> value v -> dry (C b [] rs v).
+Hint Constructors dry.
+
+Lemma dry_no_in : forall b s n os,
+  dry_backend b ->
+  In s b ->
+  s = <<n; os>> ->
+  os = [].
+Proof using.
+  induction b; intros.
+  - crush.
+  - crush.
+    + inv H. auto.
+    + inv H. eauto.
+Qed.
+
+Lemma value_dec : forall t, value t \/ ~ value t.
+Proof using.
+  destruct t; crush; try solve [right; intros; inv H].
+Qed.
+
 Theorem progress : forall b os rs t T,
   well_typed (C b os rs t) ->
   has_type empty t T ->
@@ -1004,6 +1029,87 @@ Proof with eauto.
       destruct H.
       destruct x.
       inversion H; ssame; eauto.
+Qed.
+
+Theorem progress' : forall b os rs t T,
+  well_typed (C b os rs t) ->
+  has_type empty t T ->
+  dry (C b os rs t) \/ exists c', (C b os rs t) --> c'.
+Proof using.
+  intros b os rs t T WT ET.
+  remember ET. clear Heqh. apply progress with (b:=b) (os:=os) (rs:=rs) in h; eauto.
+  destruct h.
+  - destruct os.
+    * {
+      induction b.
+      - crush.
+      - assert (dry (C b [] rs t) \/ (exists c' : config, C b [] rs t --> c')).
+        {
+          apply IHb.
+          inversion WT.
+          split; try split; crush.
+          - inv H0; eauto; inv H3; eauto.
+          - rewrite cons_app in H1.
+            rewrite backend_labels_dist in H1.
+            rewrite <- List.app_assoc in H1.
+            apply distinct_concat in H1.
+            crush.
+        }
+        destruct a as [n os].
+        + destruct os.
+          * {
+            destruct H0.
+            - left.
+              constructor; eauto.
+              constructor; eauto.
+              inv H0; eauto.
+            - right.
+              destruct H0.
+              inversion H0; ssame; try solve [match goal with | [H : value _ |- _] => inv H end].
+              + eapply ex_intro; eapply S_App; eauto.
+              + eapply ex_intro; eapply S_App2; eauto.
+              + eapply ex_intro; eapply S_Inc; eauto; crush.
+              + eapply ex_intro; eapply S_GetPay; eauto; crush.
+              + eapply ex_intro; eapply S_Last; eauto; crush.
+              + eapply ex_intro; eapply S_FuseInc; eauto; crush.
+              + eapply ex_intro; eapply S_Prop; eauto; crush.
+            }
+          * right.
+            destruct l as [l op].
+            {
+            destruct op.
+              - destruct b; destruct n.
+                + destruct (List.in_dec Nat.eq_dec n l0).
+                  * eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                + destruct s. destruct (List.in_dec Nat.eq_dec n l0).
+                  * eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n n1) (op:=inc n0 l0); eauto; crush.
+              - destruct b; destruct n.
+                + eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                + destruct s. eapply ex_intro; eapply S_Prop with (b1:=[]) (l:=l) (n1:=N n n2) (op:=add n0 n1); eauto; crush.
+              - destruct b; destruct n.
+                + destruct (Nat.eq_dec n n0).
+                  * eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                + destruct s. destruct (Nat.eq_dec n n0).
+                  * eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n n1) (op:=getpay n0); eauto; crush.
+            }
+          }
+      * destruct l as [l op].
+        right.
+        {
+        destruct op.
+        - destruct b.
+          + eapply ex_intro; eapply S_Empty; eauto.
+          + destruct s; eapply ex_intro; eapply S_First; eauto; crush.
+        - eapply ex_intro; eapply S_Add; eauto.
+        - destruct b.
+          + eapply ex_intro; eapply S_Empty; eauto.
+          + destruct s; eapply ex_intro; eapply S_First; eauto; crush.
+        }
+  - right. assumption.
 Qed.
 
 Inductive appears_free_in : string -> term -> Prop :=
@@ -1154,10 +1260,139 @@ Qed.
 Definition normal_form (c : config) : Prop :=
   ~ exists c', c --> c'.
 
-Definition stuck c : Prop :=
-match c with
-| C b os rs t => normal_form  c /\ ~ value t
-end.
+Lemma dry_normal_form : forall c b os rs t,
+    well_typed c ->
+    c = C b os rs t ->
+    (dry c <-> normal_form c).
+Proof using.
+  intros c b os rs t WT Heq.
+  split; intros.
+  - inversion H.
+    intro.
+    destruct H3.
+    inversion H3; inversion H4; try solve [subst; inv H1]; try solve [inv H5]; try solve [subst; match goal with | [H : [] = _ |- _] => inv H end].
+    + subst. inv H0.
+      * destruct b2; crush.
+      * {
+          destruct b2.
+          - inv H5. crush.
+          - inv H5.
+            apply dry_no_in with (n:=N k v0) (s:=<< N k v0; l ->> inc incby ks :: os1'' >>) (os:=l ->> inc incby ks :: os1'') in H6; crush.
+        }
+    + subst. inv H0.
+      * destruct b2; crush.
+      * {
+          destruct b2.
+          - inv H5; crush.
+          - inv H5.
+            apply dry_no_in with (n:=N k v0) (s:=<< N k v0; l ->> getpay k :: os1' >>) (os:=l ->> getpay k :: os1') in H6; crush.
+        }
+    + subst. inv H0.
+      * destruct b2; crush.
+      * {
+          destruct b2.
+          - inv H5; crush.
+          - inv H5.
+            eapply dry_no_in with (n:=n1) in H6; eauto; crush. inv H6.
+        }
+    + subst. inv H0.
+      * destruct b2; crush.
+      * {
+          destruct b2.
+          - inv H5; crush.
+            destruct os1; crush.
+          - inv H5.
+            eapply dry_no_in with (n:=n) in H6; eauto; crush. destruct os1; crush.
+        }
+    + subst. inv H0.
+      * destruct b2; crush.
+      * {
+          destruct b2.
+          - inv H6; crush.
+          - inv H6.
+            eapply dry_no_in with (n:=n1) in H7; eauto; crush. inv H7.
+        }
+  - unfold normal_form in H.
+    remember WT.
+    inversion WT.
+    destruct H2.
+    unfold config_has_type in H2.
+    destruct c; subst.
+    inv Heq.
+    apply progress with (os:=os) (rs:=rs) (b:=b) in H2; eauto.
+    destruct H2.
+    + destruct os.
+      * {
+        induction b.
+        - crush.
+        - destruct a as [n os].
+          + destruct os.
+            * constructor.
+              assert (dry (C b [] rs t)).
+              {
+                apply IHb.
+                - inversion WT.
+                  split; try split; eauto.
+                  crush.
+                  inversion H3; eauto.
+                  subst.
+                  inv H6.
+                  crush.
+                - intro.
+                  destruct H3.
+                  unfold not in H.
+                  inversion H3; ssame; try solve [match goal with | [H : value _ |- _] => inv H end]; try solve [exfalso; apply H; eauto].
+                  + exfalso; apply H. eapply ex_intro; eapply S_Inc; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_GetPay; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_Last; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_FuseInc; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_Prop; eauto; crush.
+                - crush.
+                  inv H0; eauto.
+                  inv H3; eauto.
+                - crush.
+              }
+              inv H3.
+              crush.
+              assumption.
+            * destruct l as [l op].
+              {
+              destruct op.
+              - exfalso; apply H; destruct n as [k v].
+                destruct (List.in_dec Nat.eq_dec k l0).
+                + eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
+                + destruct b.
+                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                  * destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=N k v) (b:=(<< N k v; l ->> inc n0 l0 :: os >> :: << n1; l1>> :: b)) (op:=inc n0 l0); eauto; crush.
+              - exfalso; apply H. destruct b.
+                + eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                + destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=n) (b:=(<< n; l ->> add n0 n1 :: os >> :: << n2; l0>> :: b)) (op:=add n0 n1); eauto; crush.
+              - exfalso; apply H; destruct n as [k v].
+                destruct (Nat.eq_dec k n0).
+                + eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                + destruct b.
+                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
+                  * destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=N k v) (b:=(<< N k v; l ->> getpay n0 :: os >> :: << n1; l0>> :: b)) (op:=getpay n0); eauto; crush.
+              }
+        }
+      * exfalso. apply H.
+        destruct l as [l op].
+        {
+        destruct op.
+        - destruct b.
+          eapply ex_intro; eapply S_Empty; eauto.
+          destruct s.
+          eapply ex_intro; eapply S_First; eauto.
+        - eapply ex_intro; eapply S_Add; eauto.
+        - destruct b.
+          eapply ex_intro; eapply S_Empty; eauto.
+          destruct s.
+          eapply ex_intro; eapply S_First; eauto.
+        }
+    + crush.
+Qed.
+
+Definition stuck c : Prop := normal_form c /\ ~ dry c.
 
 (* ****** end typing *)
 
@@ -1336,7 +1571,7 @@ Proof using.
     subst.
     destruct x0 as [b os rs t].
     intros [Hnf Hnv].
-    eapply progress with (b:=b) (os:=os) (rs:=rs) in Hhas_type; try assumption.
+    eapply progress' with (b:=b) (os:=os) (rs:=rs) in Hhas_type; try assumption.
     destruct Hhas_type; eauto.
   - assert (well_typed y) by (apply well_typed_preservation in H1; crush).
     apply preservation with (T:=x) in H1.
@@ -1465,6 +1700,42 @@ Proof using.
   crush.
 Qed.
 Hint Immediate star_zero_exists.
+
+Lemma star_trans :
+  forall {A : Type} (R : A -> A -> Prop) x y z m n,
+  star R m x y ->
+  star R n y z ->
+  star R (m+n) x z.
+Proof using.
+  intros.
+  generalize dependent z.
+  generalize dependent x.
+  generalize dependent y.
+  generalize dependent n.
+  induction m; induction n; intros.
+  - crush.
+    apply star_zero in H; subst; crush.
+  - simpl.
+    apply star_zero in H; subst; crush.
+  - apply star_zero in H0; subst.
+    assert (S m = S m + 0) by crush.
+    rewrite H0 in H.
+    crush.
+  - simpl in *.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    eapply Step.
+    instantiate (1:=y0).
+    assumption.
+    eapply IHm.
+    instantiate (1:=y).
+    assumption.
+    eapply Step.
+    instantiate (1:=y1).
+    assumption.
+    assumption.
+Qed.
+Hint Resolve star_trans.
 
 Lemma goes_to_refl :
   forall c,
@@ -1996,11 +2267,11 @@ Qed.
 Hint Resolve frontend_no_value.
 
 Lemma frontend_no_value' :
-  forall rs os t t',
-  C [] [] rs t --> C [] os rs t' ->
+  forall rs rs' os t t',
+  C [] [] rs t --> C [] os rs' t' ->
   ~ (value t).
 Proof using.
-  intros rs os'' t t' H.
+  intros rs rs' os'' t t' H.
   inversion H; ssame.
   - crush. inversion H0.
   - crush. inversion H0.
@@ -3640,6 +3911,28 @@ Proof using.
   inversion cxcy; subst; eauto.
 Qed.
 
+Axiom noe_indo' :
+  forall c c',
+  c --> c' ->
+  exists n c'', c' -->*[n] c'' /\ normal_form c''.
+
+Lemma wt_to_nf : forall c,
+  well_typed c ->
+  exists n c', c -->*[n] c' /\ normal_form c'.
+Proof using.
+  intros c WT.
+  remember WT.
+  inversion WT.
+  destruct H1.
+  unfold config_has_type in H1.
+  destruct c as [b os rs t]; subst.
+  apply progress' with (b:=b) (os:=os) (rs:=rs) in H1; eauto.
+  destruct H1.
+  - exists 0. exists (C b os rs t). remember (C b os rs t) as c. assert (normal_form c) by (eapply dry_normal_form; eauto). split; eauto.
+  - destruct H1. remember H1 as Hc. clear HeqHc. apply noe_indo' in H1. destruct H1. destruct H1. destruct H1.
+    exists (S x1). exists x2. split; eauto.
+Qed.
+
 Axiom noe_indo :
   forall cx cy,
   cx == cy ->
@@ -3647,16 +3940,17 @@ Axiom noe_indo :
   cx -->*[n] cx' ->
   cy -->*[m] cy' ->
   (cx' -v cy').
-(* TODO don't need this after fix normal form below *)
-(* or rather, need it but need some different form where if as input we say that they are in normal form *)
-(* then need axiom on getting to normal form *)
-Axiom noe_indo_norm :
-  forall cx cy,
-  cx == cy ->
-  forall cx' cy' n m,
-  cx -->*[n] cx' ->
-  cy -->*[m] cy' ->
-  cx' == cy'.
+
+Lemma well_typed_preservation' : forall c n c',
+  well_typed c ->
+  c -->*[n] c' ->
+  well_typed c'.
+Proof using.
+  intros c n c' WT Hmulti.
+  induction Hmulti; subst; eauto.
+  assert (well_typed y) by (eapply well_typed_preservation; eauto).
+  eauto.
+Qed.
 
 (*****************)
 (*****************)
@@ -3714,19 +4008,114 @@ Proof using.
     destruct H. destruct H. destruct H4. destruct H. destruct H4.
     rename x into cy''.
     rename x0 into cz''.
+    assert (exists n cw, cy -->*[n] cw /\ normal_form cw).
+    {
+    apply wt_to_nf.
+    apply well_typed_preservation' in H1; eauto.
+    apply well_typed_preservation in H0; eauto.
+    }
+    destruct H6 as [n' H']. destruct H' as [cw cycw]. destruct cycw as [cycw nfcw].
+    assert (exists n cw', cy'' -->*[n] cw' /\ normal_form cw').
+    {
+    apply wt_to_nf.
+    apply well_typed_preservation' in H; eauto.
+    apply well_typed_preservation in H0; eauto.
+    }
+    destruct H6 as [n'' H']. destruct H' as [cw' cycw']. destruct cycw' as [cycw' nfcw'].
+    assert (exists n cv, cz'' -->*[n] cv /\ normal_form cv).
+    {
+    apply wt_to_nf.
+    apply well_typed_preservation' in H4; eauto.
+    apply well_typed_preservation in H2; eauto.
+    }
+    destruct H6 as [n''' H']. destruct H' as [cv cycv]. destruct cycv as [cycv nfcv].
+    assert (exists n cv', cz -->*[n] cv' /\ normal_form cv').
+    {
+    apply wt_to_nf.
+    apply well_typed_preservation' in H3; eauto.
+    apply well_typed_preservation in H2; eauto.
+    }
+    destruct H6 as [n'''' H']. destruct H' as [cv' cycv']. destruct cycv' as [cycv' nfcv'].
     assert (Hsimcy' : cy' == cy') by crush.
-    destruct (noe_indo Hsimcy' H1 H).
-    destruct H6. destruct H6. destruct H7. destruct H6. destruct H7.
-    rename x into cw.
-    rename x0 into cw'.
+    assert (cw == cw').
+    {
+      eapply noe_indo with (cx':=cw) (cy':=cw') in Hsimcy'.
+      - destruct Hsimcy'.
+        destruct H6.
+        destruct H6.
+        destruct H6.
+        destruct H7.
+        destruct H7.
+        assert (x = cw).
+        {
+          destruct x3.
+          - apply star_zero in H6; eauto.
+          - inversion H6. subst. exfalso. unfold normal_form in nfcw. apply nfcw. eauto.
+        }
+        subst.
+        assert (x0 = cw').
+        {
+          destruct x4.
+          - apply star_zero in H7; eauto.
+          - inversion H7. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst. assumption.
+      - instantiate (1:=n+n'). eauto.
+      - instantiate (1:=x1+n''). eauto.
+    }
     assert (Hsimcz' : cz' == cz') by crush.
-    destruct (noe_indo Hsimcz' H4 H3).
-    destruct H9. destruct H9. destruct H9. destruct H10. destruct H10.
-    rename x into cv.
-    rename x0 into cv'.
-    (* cw' and cv are normal form, so noe_indo can get cy'' and cz'' to reduce to cw' and cv and multi step but there are no multi steps since they're already at normal form, so the multi step is 0, so no steps are taken and they are equivalent *)
-    (* so need version of noe_indo which can go all the way to normal form *)
-    assert (cw' == cv) by (apply (noe_indo_norm H5 H7 H9)).
+    assert (cv == cv').
+    {
+      eapply noe_indo with (cx':=cv) (cy':=cv') in Hsimcz'.
+      - destruct Hsimcz'.
+        destruct H7.
+        destruct H7.
+        destruct H7.
+        destruct H8.
+        destruct H8.
+        assert (x = cv).
+        {
+          destruct x3.
+          - apply star_zero in H7; eauto.
+          - inversion H7. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst.
+        assert (x0 = cv').
+        {
+          destruct x4.
+          - apply star_zero in H8; eauto.
+          - inversion H8. subst. exfalso. unfold normal_form in nfcv'. apply nfcv'. eauto.
+        }
+        subst. assumption.
+      - instantiate (1:=x2+n'''). eauto.
+      - instantiate (1:=m+n''''). eauto.
+    }
+    assert (cw' == cv).
+    {
+      eapply noe_indo with (cx':=cw') (cy':=cv) in H5.
+      - destruct H5.
+        destruct H5.
+        destruct H5.
+        destruct H5.
+        destruct H8.
+        destruct H8.
+        assert (x = cw').
+        {
+          destruct x3.
+          - apply star_zero in H5; eauto.
+          - inversion H5. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assert (x0 = cv).
+        {
+          destruct x4.
+          - apply star_zero in H8; eauto.
+          - inversion H8. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst. assumption.
+      - eauto.
+      - eauto.
+    }
     apply ex_intro with cw.
     apply ex_intro with cv'.
     split; try split.
