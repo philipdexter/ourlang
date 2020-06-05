@@ -2296,10 +2296,17 @@ Proof using.
   induction xs; crush.
 Qed.
 
+Lemma list_not_self' :
+  forall {A : Type} (x: A) xs,
+  not (xs ++ [x] = xs).
+Proof using.
+  induction xs; crush.
+Qed.
+
 Lemma app_reduce_choice :
-  forall b os rs t t' t1 t2,
+  forall b os os'' rs t t' t1 t2,
   t = t_app t1 t2 ->
-  C b os rs t --> C b os rs t' ->
+  C b os rs t --> C b os'' rs t' ->
   (exists os' t1', (C [] [] rs t1 --> C [] os' rs t1' /\ C b os rs t --> C b (os ++ os') rs (t_app t1' t2))) \/
   (value t1 /\ (exists os' t2', C [] [] rs t2 --> C [] os' rs t2' /\ C b os rs t --> C b (os ++ os') rs (t_app t1 t2'))) \/
   (value t2 /\ (exists x T t12, t1 = (t_abs x T t12) /\ C b os rs t --> C b os rs (#[x:=t2]t12))).
@@ -2334,7 +2341,7 @@ Proof using.
     eauto.
   - inv H5.
     exfalso.
-    eapply list_not_self.
+    eapply list_not_self'.
     eauto.
   - inv H5.
     exfalso.
@@ -2369,25 +2376,32 @@ Proof using.
     eauto.
 Qed.
 
-
-Axiom frontend_rstream_extension :
+Lemma frontend_rstream_extension :
   forall rs os t t' lr,
   C [] [] rs t --> C [] os rs t' ->
   C [] [] (lr :: rs) t --> C [] os (lr :: rs) t'.
-(* TODO *)
-(* Proof. *)
-(*   induction t; intros. *)
-(*   inversion H; subst; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4). *)
-(*   - apply app_reduce_choice with (t1:=t1) (t2:=t2) in H; try reflexivity. *)
-(*     destruct H. *)
-(*     + destruct H. *)
-(*       destruct H. *)
-(*       apply IHt1 with (lr:=lr0) in H. *)
-
-(*   - apply frontend_no_value' in H; crush. *)
-(*   - inv H; try (destruct os; crush); try (destruct b1; crush); try (inv H3); try (inv H4). *)
-(*   - apply frontend_no_value' in H; crush. *)
-(* Admitted. *)
+Proof using.
+  intros rs os t.
+  generalize dependent rs.
+  generalize dependent os.
+  induction t; intros os rs t' lr Hstep.
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+    + eapply S_App; eauto.
+    + eapply S_App1; eauto.
+    + eapply S_App2; eauto.
+  - exfalso; apply frontend_no_value' in Hstep; eauto.
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+    + eapply S_Emit; eauto.
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+    + eapply S_Claim; eauto. crush.
+    + eapply S_Ctx_Downarrow; eauto.
+  - inversion Hstep; ssame; try solve [destruct b1; crush].
+    + eapply S_Emit_OT_GetPay; eauto.
+    + eapply S_Ctx_Emit_OT_GetPay; eauto.
+Qed.
 Hint Resolve frontend_rstream_extension.
 
 Lemma unique_result :
@@ -2444,29 +2458,6 @@ Proof using.
     inversion H3.
     crush.
 Qed.
-
-Axiom app_reduce :
-  forall rs os t t' t'',
-  C [] [] rs (t_app t t') --> C [] os rs (t_app t'' t') ->
-  C [] [] rs t --> C [] os rs t''.
-(* TODO *)
-(* Proof using. *)
-(*   intros rs os t t' t'' R. *)
-(*   inversion R; subst. *)
-(*   - inv H2. *)
-(*     admit. *)
-(*   - inv H2. *)
-(*     assumption. *)
-(*   - inv H3. *)
-(*     apply no_refl in H7. *)
-(*     crush. *)
-(*   - inv H2. *)
-(*   - destruct b1; crush. *)
-(*   - destruct b1; crush. *)
-(*   - destruct b1; crush. *)
-(*   - destruct b1; crush. *)
-(*   - destruct b1; crush. *)
-(* Qed. *)
 
 Lemma frontend_deterministic :
   forall t rs os t',
