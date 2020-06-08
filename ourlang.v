@@ -725,12 +725,15 @@ Definition get_config_rstream (c : config) :=
 match c with
 | C _ _ rs _ => rs
 end.
-(* TODO *)
+Definition get_config_backend (c : config) :=
+match c with
+| C b _ _ _ => b
+end.
 Axiom all_labels :
   forall c,
   well_typed c ->
   forall l,
-  (exists v, In (l ->>> v) (get_config_rstream c)) \/ (exists n c' v, c -->*[n] c' /\ In (l ->>> v) (get_config_rstream c')).
+  (exists v, In (l ->>> v) (get_config_rstream c)) \/ (exists op b1 s b2, get_config_backend c = b1 ++ s :: b2 /\ In (l ->> op) (get_ostream s)).
 
 Axiom fresh :
   forall c b os rs l op,
@@ -996,17 +999,66 @@ Proof with eauto.
         destruct WT.
         - destruct H0.
           eauto.
-        - destruct H0.
-          destruct H0.
-          destruct H0.
-          destruct x.
-          + destruct H0.
-            assert (x0 = C b os rs (t_downarrow (t_label label))) by (inv H0; crush).
-            subst.
-            eauto.
-          + destruct H0.
-            inv H0.
-            eauto.
+        - destruct H0. destruct H0. destruct H0. destruct H0. destruct H0.
+          unfold get_config_backend in H0.
+          destruct x1.
+          apply List.in_split in H1.
+          destruct H1. destruct H1.
+          unfold get_ostream in H1.
+          destruct x1.
+          + simpl in *.
+            rename x into op.
+            destruct op; destruct n.
+            * {
+              destruct (List.in_dec Nat.eq_dec n l0).
+              - subst; eapply ex_intro; eapply S_Inc; eauto.
+              - subst.
+                destruct x2.
+                + eapply ex_intro; eapply S_Last; eauto.
+                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                  crush.
+              }
+            * {
+              subst; destruct x2.
+              - eapply ex_intro; eapply S_Last; eauto.
+              - destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                crush.
+              }
+            * {
+              destruct (Nat.eq_dec n n0).
+              - subst; eapply ex_intro; eapply S_GetPay; eauto.
+              - subst.
+                destruct x2.
+                + eapply ex_intro; eapply S_Last; eauto. crush.
+                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                  crush.
+              }
+          + destruct l0.
+            destruct o; destruct n; simpl in *.
+            * {
+              destruct (List.in_dec Nat.eq_dec n l0).
+              - subst; eapply ex_intro; eapply S_Inc; eauto.
+              - subst.
+                destruct x2.
+                + eapply ex_intro; eapply S_Last; eauto.
+                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                  crush.
+              }
+            * {
+              subst; destruct x2.
+              - eapply ex_intro; eapply S_Last; eauto.
+              - destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                crush.
+              }
+            * {
+              destruct (Nat.eq_dec n n1).
+              - subst; eapply ex_intro; eapply S_GetPay; eauto.
+              - subst.
+                destruct x2.
+                + eapply ex_intro; eapply S_Last; eauto. crush.
+                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
+                  crush.
+              }
         }
     + right.
       destruct H.
