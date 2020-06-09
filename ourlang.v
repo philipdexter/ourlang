@@ -1,18 +1,4 @@
 
-(* TODO try removing inc (and inc fusion) and replacing with pmap.
-means also need load rule. see how far we get. also introduce new fuse
-map rule
-
-!!!!!
-also try replacing getpay with a fold rule *)
-
-(* !!!!!!!!!!!!! just replace inc rule with map rule, don't create new
-, means we get to keep ordering etc. *)
-
-(* TODO need graph typing rules!!!!!!!!!!!!!! *)
-
-(* TODO need S_Load *)
-
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
 From Coq Require Import Sorting.Permutation.
@@ -917,7 +903,6 @@ Proof using.
   - right; intro; inv H1; eauto.
 Qed.
 
-(* TODO *)
 Axiom load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
   well_typed c ->
   c = C b os0 rs0 term0 ->
