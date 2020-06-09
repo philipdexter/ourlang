@@ -1,4 +1,15 @@
 
+(* TODO try removing inc (and inc fusion) and replacing with pmap.
+means also need load rule. see how far we get. also introduce new fuse
+map rule *)
+
+(* !!!!!!!!!!!!! just replace inc rule with map rule, don't create new
+, means we get to keep ordering etc. *)
+
+(* TODO need graph typing rules!!!!!!!!!!!!!! *)
+
+(* TODO need S_Load *)
+
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
 From Coq Require Import Sorting.Permutation.
@@ -20,65 +31,9 @@ Ltac inv H := inversion H; subst; clear H.
 Set Implicit Arguments.
 
 Notation key := nat.
-Notation payload := nat.
 Notation label := nat.
 Notation keyset := (list key).
-
-Inductive node : Type :=
-| N : key -> payload -> node.
-Hint Constructors node.
-
-Inductive operation : Type :=
-| inc : nat -> keyset -> operation
-| add : key -> payload -> operation
-| getpay : key -> operation.
-Hint Constructors operation.
-
-Definition target op :=
-match op with
-| inc _ ks => ks
-| add _ _ => []
-| getpay k => [k]
-end.
-Hint Unfold target.
-
-Definition not_add op : Prop :=
-match op with
-| inc _ _ => True
-| add _ _ => False
-| getpay _ => True
-end.
-Hint Unfold not_add.
-
-Definition final op : payload :=
-match op with
-| inc _ ks => 0
-| add k _ => k
-| getpay _ => 0
-end.
-Hint Unfold final.
-
-Inductive labeled_operation : Type :=
-| lo : label -> operation -> labeled_operation.
-Hint Constructors labeled_operation.
-
-Notation "l ->> o" := (lo l o) (at level 40).
-
 Notation result := nat.
-
-Inductive labeled_result : Type :=
-| lr : label -> result -> labeled_result.
-Hint Constructors labeled_result.
-
-Notation "l ->>> r" := (lr l r) (at level 40).
-
-Notation ostream := (list labeled_operation).
-Notation rstream := (list labeled_result).
-
-Inductive station : Type :=
-| St : node -> ostream -> station.
-Hint Constructors station.
-Notation "<< n ; os >>" := (St n os).
 
 (* ***********************frontend *)
 
@@ -99,7 +54,7 @@ Inductive term : Type :=
 | t_ks_cons : term -> term -> term
 | t_downarrow : term -> term
 | t_emit_ot_getpay : label -> term -> term
-| t_emit_ot_inc : label -> term -> term -> term
+| t_emit_ot_pmap : label -> term -> term -> term
 | t_emit_ot_add : label -> term -> term -> term.
 Hint Constructors term.
 
@@ -139,14 +94,70 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_downarrow (#[x:=s] t)
   | t_emit_ot_getpay l t =>
       t_emit_ot_getpay l (#[x:=s] t)
-  | t_emit_ot_inc l t1 t2 =>
-      t_emit_ot_inc l (#[x:=s] t1) (#[x:=s] t2)
+  | t_emit_ot_pmap l t1 t2 =>
+      t_emit_ot_pmap l (#[x:=s] t1) (#[x:=s] t2)
   | t_emit_ot_add l t1 t2 =>
       t_emit_ot_add l (#[x:=s] t1) (#[x:=s] t2)
   end
 where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
 (* ***********************end frontend *)
+
+Notation payload := term.
+
+Inductive node : Type :=
+| N : key -> payload -> node.
+Hint Constructors node.
+
+Inductive operation : Type :=
+| pmap : term -> keyset -> operation
+| add : key -> payload -> operation
+| getpay : key -> operation.
+Hint Constructors operation.
+
+Definition target op :=
+match op with
+| pmap _ ks => ks
+| add _ _ => []
+| getpay k => [k]
+end.
+Hint Unfold target.
+
+Definition not_add op : Prop :=
+match op with
+| pmap _ _ => True
+| add _ _ => False
+| getpay _ => True
+end.
+Hint Unfold not_add.
+
+Definition final op : result :=
+match op with
+| pmap _ ks => 0
+| add k _ => k
+| getpay _ => 0
+end.
+Hint Unfold final.
+
+Inductive labeled_operation : Type :=
+| lo : label -> operation -> labeled_operation.
+Hint Constructors labeled_operation.
+
+Notation "l ->> o" := (lo l o) (at level 40).
+
+Inductive labeled_result : Type :=
+| lr : label -> result -> labeled_result.
+Hint Constructors labeled_result.
+
+Notation "l ->>> r" := (lr l r) (at level 40).
+
+Notation ostream := (list labeled_operation).
+Notation rstream := (list labeled_result).
+
+Inductive station : Type :=
+| St : node -> ostream -> station.
+Hint Constructors station.
+Notation "<< n ; os >>" := (St n os).
 
 Notation backend := (list station).
 
@@ -208,15 +219,19 @@ Inductive has_type : context -> term -> type -> Prop :=
 | T_Emit_OT_GetPay : forall l t Gamma,
     has_type Gamma t Result ->
     has_type Gamma (t_emit_ot_getpay l t) (Label Result)
-| T_Emit_OT_Inc : forall l t1 t2 Gamma,
-    has_type Gamma t1 Result ->
+| T_Emit_OT_PMap : forall l t1 t2 Gamma,
+    has_type Gamma t1 (Arrow Result Result) ->
     has_type Gamma t2 Keyset ->
-    has_type Gamma (t_emit_ot_inc l t1 t2) (Label Result)
+    has_type Gamma (t_emit_ot_pmap l t1 t2) (Label Result)
 | T_Emit_OT_Add : forall l t1 t2 Gamma,
     has_type Gamma t1 Result ->
     has_type Gamma t2 Result ->
     has_type Gamma (t_emit_ot_add l t1 t2) (Label Result).
 Hint Constructors has_type.
+
+Axiom graph_typing : forall n k t,
+    n = N k t ->
+    has_type empty t Result.
 
 (* ****** end typing *)
 
@@ -227,6 +242,9 @@ match t with
 | _ => []
 end.
 
+Definition pmap_compose f f' :=
+t_abs "x" Result (t_app f (t_app f' (t_var "x"))).
+
 Reserved Notation "c1 '-->' c2" (at level 40).
 
 Inductive step : config -> config -> Prop :=
@@ -234,14 +252,14 @@ Inductive step : config -> config -> Prop :=
 | S_Emit_OT_GetPay : forall c b os rs l k,
     c = C b os rs (t_emit_ot_getpay l (t_result k)) ->
     c --> C b (os ++ [l ->> getpay k]) rs (t_label l)
-| S_Emit_OT_Inc : forall c b os rs l incby ks ks',
-    c = C b os rs (t_emit_ot_inc l (t_result incby) ks) ->
+| S_Emit_OT_PMap : forall c b os rs l f ks,
+    c = C b os rs (t_emit_ot_pmap l f ks) ->
+    value f ->
     value ks ->
-    ks' = keyset_to_keyset ks ->
-    c --> C b (os ++ [l ->> inc incby ks']) rs (t_label l)
+    c --> C b (os ++ [l ->> pmap f (keyset_to_keyset ks)]) rs (t_label l)
 | S_Emit_OT_Add : forall c b os rs l k v,
     c = C b os rs (t_emit_ot_add l (t_result k) (t_result v)) ->
-    c --> C b (os ++ [l ->> add k v]) rs (t_label l)
+    c --> C b (os ++ [l ->> add k (t_result v)]) rs (t_label l)
 | S_Claim : forall c b os rs l v,
     c = C b os rs (t_downarrow (t_label l)) ->
     In (l ->>> v) rs ->
@@ -254,15 +272,15 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs (t_emit_ot_getpay l t) ->
     C [] [] rs t --> C [] os' rs t' ->
     c --> C b (os ++ os') rs (t_emit_ot_getpay l t')
-| S_Ctx_Emit_OT_Inc1 : forall c b os os' rs l t1 t1' t2,
-    c = C b os rs (t_emit_ot_inc l t1 t2) ->
+| S_Ctx_Emit_OT_PMap1 : forall c b os os' rs l t1 t1' t2,
+    c = C b os rs (t_emit_ot_pmap l t1 t2) ->
     C [] [] rs t1 --> C [] os' rs t1' ->
-    c --> C b (os ++ os') rs (t_emit_ot_inc l t1' t2)
-| S_Ctx_Emit_OT_Inc2 : forall c b os os' rs l t1 t2 t2',
-    c = C b os rs (t_emit_ot_inc l t1 t2) ->
+    c --> C b (os ++ os') rs (t_emit_ot_pmap l t1' t2)
+| S_Ctx_Emit_OT_PMap2 : forall c b os os' rs l t1 t2 t2',
+    c = C b os rs (t_emit_ot_pmap l t1 t2) ->
     value t1 ->
     C [] [] rs t2 --> C [] os' rs t2' ->
-    c --> C b (os ++ os') rs (t_emit_ot_inc l t1 t2')
+    c --> C b (os ++ os') rs (t_emit_ot_pmap l t1 t2')
 | S_Ctx_Emit_OT_Add1 : forall c b os os' rs l t1 t1' t2,
     c = C b os rs (t_emit_ot_add l t1 t2) ->
     C [] [] rs t1 --> C [] os' rs t1' ->
@@ -314,21 +332,21 @@ Inductive step : config -> config -> Prop :=
     o = l ->> add k v ->
     c --> C (<<(N k v); []>> :: b) os' (l ->>> final (add k v) :: rs) term
 (* task *)
-| S_Inc : forall c b os rs b1 s1 s1' os1 os1' os1'' b2 k v ks l term incby,
+| S_PMap : forall c b os rs b1 s1 s1' os1 os1' os1'' b2 k v ks l term f,
     c = C b os rs term ->
     b = b1 ++ s1 :: b2 ->
     s1 = <<(N k v); os1>> ->
-    os1 = l ->> inc incby ks :: os1'' ->
-    os1' = l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' ->
-    s1' = <<(N k (v + incby)); os1'>> ->
+    os1 = l ->> pmap f ks :: os1'' ->
+    os1' = l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' ->
+    s1' = <<(N k (t_app f v)); os1'>> ->
     In k ks ->
     c --> C (b1 ++ s1' :: b2) os rs term
 | S_GetPay : forall c b os rs b1 s1 s1' os1 os1' b2 k v l term,
     c = C b os rs term ->
     b = b1 ++ s1 :: b2 ->
-    s1 = <<(N k v); os1>> ->
+    s1 = <<(N k (t_result v)); os1>> ->
     os1 = l ->> getpay k :: os1' ->
-    s1' = <<(N k v); os1'>> ->
+    s1' = <<(N k (t_result v)); os1'>> ->
     c --> C (b1 ++ s1' :: b2) os (l ->>> v :: rs) term
 | S_Last : forall c b os rs l n1 os1 os1' op b1 k term,
     c = C b os rs term ->
@@ -337,10 +355,10 @@ Inductive step : config -> config -> Prop :=
     k = getKey n1 ->
     not (In k (target op)) ->
     c --> C (b1 ++ [<<n1; os1'>>]) os (l ->>> final op :: rs) term
-| S_FuseInc : forall c b n b1 b2 os os1 os2 rs term incby incby' ks l l',
+| S_FusePMap : forall c b n b1 b2 os os1 os2 rs term f f' ks l l',
     c = C b os rs term ->
-    b = b1 ++ <<n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2>> :: b2 ->
-    c --> C (b1 ++ <<n; os1 ++ l ->> inc (incby + incby') ks :: os2>> :: b2) os (l' ->>> final (inc incby' ks) :: rs) term
+    b = b1 ++ <<n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2>> :: b2 ->
+    c --> C (b1 ++ <<n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2>> :: b2) os (l' ->>> final (pmap f' ks) :: rs) term
 | S_Prop : forall c b os rs n1 n2 os1 os2 b1 b2 l op term,
     c = C b os rs term ->
     ~ (In (getKey n1) (target op)) ->
@@ -356,58 +374,6 @@ Inductive star {A : Type} (R : A -> A -> Prop) : nat -> A -> A -> Prop :=
 Hint Constructors star.
 
 Notation "c1 '-->*[' n ']' c2" := (star step n c1 c2) (at level 40).
-
-Example step_empty : (C [] [1 ->> inc 1 []] [] noop) --> (C [] [] [1 ->>> 0] noop).
-Proof using.
-  assert (0 = final (inc 1 [])) by crush.
-  rewrite -> H.
-  apply S_Empty with (c := (C [] [1 ->> inc 1 []] [] noop)) (os := [1 ->> inc 1 []]) (o := 1 ->> inc 1 []); crush.
-Qed.
-
-Example step_first : (C [<<(N 1 1); []>>] [1 ->> inc 1 []] [] noop) --> (C [<<(N 1 1); [1 ->> inc 1 []]>>] [] [] noop).
-Proof using.
-  eapply S_First with (c := (C [<<(N 1 1); []>>] [1 ->> inc 1 []] [] noop)) (n1 := (N 1 1)) (o := 1 ->> inc 1 []) (os1 := []); crush.
-Qed.
-
-Example step_add : (C [] [1 ->> add 1 0] [] noop) --> (C [<<(N 1 0); []>>] [] [1 ->>> 1] noop).
-Proof using.
-  eapply S_Add; crush.
-Qed.
-
-Example step_addinc1 : (C [] [1 ->> add 1 0; 2 ->> inc 1 [1]] [] noop) --> (C [<<(N 1 0); []>>] [2 ->> inc 1 [1]] [1 ->>> 1] noop).
-Proof using.
-  eapply S_Add; crush.
-Qed.
-
-Example step_addinc2 : (C [<<(N 1 0); []>>] [2 ->> inc 1 [1]] [1 ->>> 1] noop) --> (C [<<(N 1 0); [2 ->> inc 1 [1]]>>] [] [1 ->>> 1] noop).
-Proof using.
-  eapply S_First with (c := (C [<<(N 1 0); []>>] [2 ->> inc 1 [1]] [1 ->>> 1] noop)) (n1 := (N 1 0)) (o := 2 ->> inc 1 [1]) (os1 := []); crush.
-Qed.
-
-Example step_addinc3 : (C [<<(N 1 0); [2 ->> inc 1 [1]]>>] [] [1 ->>> 1] noop) --> (C [<<(N 1 1); [2 ->> inc 1 []]>>] [] [1 ->>> 1] noop).
-Proof using.
-  eapply S_Inc with (c := (C [<<(N 1 0); [2 ->> inc 1 [1]]>>] [] [1 ->>> 1] noop)) (s1' := <<(N 1 1); [2 ->> inc 1 []]>>) (b1 := []); crush.
-Qed.
-
-Example step_addinc4 : (C [<<(N 1 1); [2 ->> inc 1 []]>>] [] [1 ->>> 1] noop) --> (C [<<(N 1 1); []>>] [] [2 ->>> 0; 1 ->>> 1] noop).
-Proof using.
-  assert (0 = final (inc 1 [])) by crush.
-  rewrite -> H.
-  eapply S_Last with (c := (C [<<(N 1 1); [2 ->> inc 1 []]>>] [] [1 ->>> 1] noop)) (n1 := (N 1 1)) (os1 := [2 ->> inc 1 []]) (b1 := []); crush.
-Qed.
-
-Example step_addinc : (C [] [1 ->> add 1 0; 2 ->> inc 1 [1]] [] noop) -->*[4] (C [<<(N 1 1); []>>] [] [2 ->>> 0; 1 ->>> 1] noop).
-Proof using.
-  eapply Step.
-  apply step_addinc1.
-  eapply Step.
-  apply step_addinc2.
-  eapply Step.
-  apply step_addinc3.
-  eapply Step.
-  apply step_addinc4.
-  eapply Zero.
-Qed.
 
 Definition backend_keys (b : backend) :=
 map (fun s => getKey (get_node s)) b.
@@ -739,7 +705,7 @@ Inductive well_typed : config -> Prop :=
     well_typed c.
 Hint Constructors well_typed.
 
-Example wt : well_typed (C [<<(N 1 2); [5 ->> inc 1 []]>>; <<(N 2 3); [4 ->> inc 1 []]>>] [2 ->> inc 1 []; 3 ->> inc 1 []] [1 ->>> 2] noop).
+Example wt : well_typed (C [<<(N 1 (t_result 2)); [5 ->> pmap (t_abs "x" Result (t_var "x")) []]>>; <<(N 2 (t_result 3)); [4 ->> pmap (t_abs "x" Result (t_var "x")) []]>>] [2 ->> pmap (t_abs "x" Result (t_var "x")) []; 3 ->> pmap (t_abs "x" Result (t_var "x")) []] [1 ->>> 2] noop).
 Proof using.
   eapply WT; repeat crush; repeat (eapply distinct_many; crush).
   unfold noop; eauto.
@@ -788,7 +754,7 @@ Axiom fresh''' :
   well_typed (C b (os ++ os') rs t').
 Axiom fresh'''' :
   forall c b os rs l t1 t2 os' t',
-  c = C b os rs (t_emit_ot_inc l t1 t2) ->
+  c = C b os rs (t_emit_ot_pmap l t1 t2) ->
   well_typed c ->
   well_typed (C b (os ++ os') rs t').
 Axiom fresh''''' :
@@ -854,19 +820,19 @@ Proof using.
   exists x, t0. auto.
 Qed.
 
-Lemma canonical_forms_emit_ot_inc : forall t l t1 t2,
-  t = t_emit_ot_inc l t1 t2 ->
-  has_type empty t1 Result ->
+Lemma canonical_forms_emit_ot_pmap : forall t l t1 t2,
+  t = t_emit_ot_pmap l t1 t2 ->
+  has_type empty t1 (Arrow Result Result) ->
   has_type empty t2 Keyset ->
   value t1 ->
   value t2 ->
-  exists incby ks, (ks = t_ks_nil \/ (exists k' ks', ks = t_ks_cons k' ks' /\ value k' /\ value ks')) /\ t = t_emit_ot_inc l (t_result incby) ks.
+  exists x u ks, (ks = t_ks_nil \/ (exists k' ks', ks = t_ks_cons k' ks' /\ value k' /\ value ks')) /\ t = t_emit_ot_pmap l (t_abs x Result u) ks.
 Proof using.
   intros t l t1 t2 Hteq HT1 HT2 HV1 HV2.
   inversion HV1; intros; subst; try inversion HT1; subst; auto.
   inversion HV2; intros; subst; try inversion HT2; subst; auto.
-  - exists result, t_ks_nil; eauto.
-  - exists result, (t_ks_cons k ks); eauto.
+  - exists x, t0, t_ks_nil; eauto.
+  - exists x, t0, (t_ks_cons k ks); eauto.
     split.
     + right. eauto.
     + eauto.
@@ -985,7 +951,7 @@ Proof with eauto.
             destruct op; destruct n.
             * {
               destruct (List.in_dec Nat.eq_dec n l0).
-              - subst; eapply ex_intro; eapply S_Inc; eauto.
+              - subst; eapply ex_intro; eapply S_PMap; eauto.
               - subst.
                 destruct x2.
                 + eapply ex_intro; eapply S_Last; eauto.
@@ -1000,7 +966,11 @@ Proof with eauto.
               }
             * {
               destruct (Nat.eq_dec n n0).
-              - subst; eapply ex_intro; eapply S_GetPay; eauto.
+              - destruct (value_dec t).
+                + assert (has_type empty t Result) by (eapply graph_typing; eauto).
+                  destruct t; try solve [inv H3]; try solve [inv H3; inv H6]; try solve [inv H2].
+                  subst; eapply ex_intro; eapply S_GetPay; eauto.
+                + admit. (* TODO need S_Load rule to reduce *)
               - subst.
                 destruct x2.
                 + eapply ex_intro; eapply S_Last; eauto. crush.
@@ -1011,7 +981,7 @@ Proof with eauto.
             destruct o; destruct n; simpl in *.
             * {
               destruct (List.in_dec Nat.eq_dec n l0).
-              - subst; eapply ex_intro; eapply S_Inc; eauto.
+              - subst; eapply ex_intro; eapply S_PMap; eauto.
               - subst.
                 destruct x2.
                 + eapply ex_intro; eapply S_Last; eauto.
@@ -1026,7 +996,11 @@ Proof with eauto.
               }
             * {
               destruct (Nat.eq_dec n n1).
-              - subst; eapply ex_intro; eapply S_GetPay; eauto.
+              - destruct (value_dec t).
+                + assert (has_type empty t Result) by (eapply graph_typing; eauto).
+                  destruct t; try solve [inv H3]; try solve [inv H3; inv H6]; try solve [inv H2].
+                  subst; eapply ex_intro; eapply S_GetPay; eauto.
+                + admit. (* TODO need S_Load rule to reduce *)
               - subst.
                 destruct x2.
                 + eapply ex_intro; eapply S_Last; eauto. crush.
@@ -1051,15 +1025,6 @@ Proof with eauto.
     + inversion WT. split; crush; eauto.
     + destruct IHET2...
       * inversion WT. split; crush; eauto.
-      * remember (t_emit_ot_inc l t1 t2) as t.
-        apply canonical_forms_emit_ot_inc in Heqt; eauto.
-        destruct Heqt. destruct H1.
-        destruct H1.
-        {
-        destruct H1; subst.
-        - eapply ex_intro; eapply S_Emit_OT_Inc; eauto.
-        - destruct H1; destruct H1. destruct H1; destruct H2; subst; eapply ex_intro; eapply S_Emit_OT_Inc; eauto.
-        }
       * destruct H0. inversion H0; ssame; eauto.
     + destruct H.
       inversion H; ssame; eauto.
@@ -1073,7 +1038,10 @@ Proof with eauto.
       * destruct H0. inversion H0; ssame; eauto.
     + destruct H.
       inversion H; ssame; eauto.
-Qed.
+Unshelve.
+auto.
+auto.
+Admitted.
 
 Theorem progress' : forall b os rs t T,
   well_typed (C b os rs t) ->
@@ -1117,10 +1085,10 @@ Proof using.
               + eapply ex_intro; eauto.
               + eapply ex_intro; eauto.
               + eapply ex_intro; eauto.
-              + eapply ex_intro; eapply S_Inc; eauto; crush.
+              + eapply ex_intro; eapply S_PMap; eauto; crush.
               + eapply ex_intro; eapply S_GetPay; eauto; crush.
               + eapply ex_intro; eapply S_Last; eauto; crush.
-              + eapply ex_intro; eapply S_FuseInc; eauto; crush.
+              + eapply ex_intro; eapply S_FusePMap; eauto; crush.
               + eapply ex_intro; eapply S_Prop; eauto; crush.
             }
           * right.
@@ -1129,21 +1097,31 @@ Proof using.
             destruct op.
               - destruct b; destruct n.
                 + destruct (List.in_dec Nat.eq_dec n l0).
-                  * eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_PMap with (b1:=[]); eauto; crush.
                   * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
                 + destruct s. destruct (List.in_dec Nat.eq_dec n l0).
-                  * eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
-                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n n1) (op:=inc n0 l0); eauto; crush.
+                  * eapply ex_intro; eapply S_PMap with (b1:=[]); eauto; crush.
+                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n t1) (op:=pmap t0 l0); eauto; crush.
               - destruct b; destruct n.
                 + eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                + destruct s. eapply ex_intro; eapply S_Prop with (b1:=[]) (l:=l) (n1:=N n n2) (op:=add n0 n1); eauto; crush.
+                + destruct s. eapply ex_intro; eapply S_Prop with (b1:=[]) (l:=l) (n1:=N n t1) (op:=add n0 t0); eauto; crush.
               - destruct b; destruct n.
                 + destruct (Nat.eq_dec n n0).
-                  * eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                  * {
+                    destruct (value_dec t0).
+                    - subst; eapply ex_intro; eapply S_GetPay; eauto.
+                      admit. (* TODO need graph typing to know that it's a result *)
+                    - admit. (* TODO need S_Load rule to reduce *)
+                    }
                   * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
                 + destruct s. destruct (Nat.eq_dec n n0).
-                  * eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
-                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n n1) (op:=getpay n0); eauto; crush.
+                  * {
+                    destruct (value_dec t0).
+                    - subst; eapply ex_intro; eapply S_GetPay; eauto.
+                      admit. (* TODO need graph typing to know that it's a result *)
+                    - admit. (* TODO need S_Load rule to reduce *)
+                    }
+                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n t0) (op:=getpay n0); eauto; crush.
             }
           }
       * destruct l as [l op].
@@ -1159,7 +1137,20 @@ Proof using.
           + destruct s; eapply ex_intro; eapply S_First; eauto; crush.
         }
   - right. assumption.
-Qed.
+Unshelve.
+auto.
+auto.
+exact [].
+exact [].
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+Admitted.
 
 Inductive appears_free_in : string -> term -> Prop :=
 | afi_var : forall x,
@@ -1186,12 +1177,12 @@ Inductive appears_free_in : string -> term -> Prop :=
 | afi_emit_ot_getpay : forall x l t,
     appears_free_in x t ->
     appears_free_in x (t_emit_ot_getpay l t)
-| afi_emit_ot_inc1 : forall x l t1 t2,
+| afi_emit_ot_pmap1 : forall x l t1 t2,
     appears_free_in x t1 ->
-    appears_free_in x (t_emit_ot_inc l t1 t2)
-| afi_emit_ot_inc2 : forall x l t1 t2,
+    appears_free_in x (t_emit_ot_pmap l t1 t2)
+| afi_emit_ot_pmap2 : forall x l t1 t2,
     appears_free_in x t2 ->
-    appears_free_in x (t_emit_ot_inc l t1 t2)
+    appears_free_in x (t_emit_ot_pmap l t1 t2)
 | afi_emit_ot_add1 : forall x l t1 t2,
     appears_free_in x t1 ->
     appears_free_in x (t_emit_ot_add l t1 t2)
@@ -1361,7 +1352,7 @@ Proof using.
           destruct b2.
           - inv H5. crush.
           - inv H5.
-            apply dry_no_in with (n:=N k v0) (s:=<< N k v0; l ->> inc incby ks :: os1'' >>) (os:=l ->> inc incby ks :: os1'') in H6; crush.
+            apply dry_no_in with (n:=N k v0) (s:=<< N k v0; l ->> pmap f ks :: os1'' >>) (os:=l ->> pmap f ks :: os1'') in H6; crush.
         }
     + subst. inv H0.
       * destruct b2; crush.
@@ -1369,7 +1360,7 @@ Proof using.
           destruct b2.
           - inv H5; crush.
           - inv H5.
-            apply dry_no_in with (n:=N k v0) (s:=<< N k v0; l ->> getpay k :: os1' >>) (os:=l ->> getpay k :: os1') in H6; crush.
+            apply dry_no_in with (n:=N k (t_result v0)) (s:=<< N k (t_result v0); l ->> getpay k :: os1' >>) (os:=l ->> getpay k :: os1') in H6; crush.
         }
     + subst. inv H0.
       * destruct b2; crush.
@@ -1426,10 +1417,10 @@ Proof using.
                   destruct H3.
                   unfold not in H.
                   inversion H3; ssame; try solve [match goal with | [H : value _ |- _] => inv H end]; try solve [exfalso; apply H; eauto].
-                  + exfalso; apply H. eapply ex_intro; eapply S_Inc; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_PMap; eauto; crush.
                   + exfalso; apply H. eapply ex_intro; eapply S_GetPay; eauto; crush.
                   + exfalso; apply H. eapply ex_intro; eapply S_Last; eauto; crush.
-                  + exfalso; apply H. eapply ex_intro; eapply S_FuseInc; eauto; crush.
+                  + exfalso; apply H. eapply ex_intro; eapply S_FusePMap; eauto; crush.
                   + exfalso; apply H. eapply ex_intro; eapply S_Prop; eauto; crush.
                 - crush.
                   inv H0; eauto.
@@ -1444,16 +1435,21 @@ Proof using.
               destruct op.
               - exfalso; apply H; destruct n as [k v].
                 destruct (List.in_dec Nat.eq_dec k l0).
-                + eapply ex_intro; eapply S_Inc with (b1:=[]); eauto; crush.
+                + eapply ex_intro; eapply S_PMap with (b1:=[]); eauto; crush.
                 + destruct b.
                   * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                  * destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=N k v) (b:=(<< N k v; l ->> inc n0 l0 :: os >> :: << n1; l1>> :: b)) (op:=inc n0 l0); eauto; crush.
+                  * destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=N k v) (b:=(<< N k v; l ->> pmap t0 l0 :: os >> :: << n0; l1>> :: b)) (op:=pmap t0 l0); eauto; crush.
               - exfalso; apply H. destruct b.
                 + eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                + destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=n) (b:=(<< n; l ->> add n0 n1 :: os >> :: << n2; l0>> :: b)) (op:=add n0 n1); eauto; crush.
+                + destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=n) (b:=(<< n; l ->> add n0 t0 :: os >> :: << n1; l0>> :: b)) (op:=add n0 t0); eauto; crush.
               - exfalso; apply H; destruct n as [k v].
                 destruct (Nat.eq_dec k n0).
-                + eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                + {
+                  destruct (value_dec v).
+                  - subst; eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
+                    admit. (* TODO need graph typing to know that it's a result *)
+                  - admit. (* TODO need S_Load rule to reduce *)
+                  }
                 + destruct b.
                   * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
                   * destruct s. eapply ex_intro; apply S_Prop with (b1:=[]) (os1:=os) (n1:=N k v) (b:=(<< N k v; l ->> getpay n0 :: os >> :: << n1; l0>> :: b)) (op:=getpay n0); eauto; crush.
@@ -1474,7 +1470,13 @@ Proof using.
           eapply ex_intro; eapply S_First; eauto.
         }
     + crush.
-Qed.
+Unshelve.
+auto.
+auto.
+auto.
+auto.
+auto.
+Admitted.
 
 Definition stuck c : Prop := normal_form c /\ ~ dry c.
 
@@ -1496,12 +1498,12 @@ Proof using.
   (* S_Emit_OT_GetPay *)
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t_result k) (os':=[l ->> getpay k]) (t':=t_label l) in H; inv H; crush.
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t_result k) (os':=[l ->> getpay k]) (t':=t_label l) in H; inv H; crush.
-  (* S_Emit_OT_Inc *)
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result incby) (os':=[l ->> inc incby (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result incby) (os':=[l ->> inc incby (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
+  (* S_Emit_OT_PMap *)
+  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=f) (os':=[l ->> pmap f (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
+  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=f) (os':=[l ->> pmap f (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
   (* S_Emit_OT_Add *)
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k v]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k v]) (t':=t_label l) in H; inv H; crush.
+  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k (t_result v)]) (t':=t_label l) in H; inv H; crush.
+  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k (t_result v)]) (t':=t_label l) in H; inv H; crush.
   (* S_Claim auto handled *)
   (* S_Ctx_Downarrow *)
   - apply fresh'' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t:=t) (t':=t') in H; inv H; crush.
@@ -1509,10 +1511,10 @@ Proof using.
   (* S_Ctx_Emit_OT_GetPay *)
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t) (os':=os') (t':=t_emit_ot_getpay l t') in H; inv H; crush.
   - apply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t:=t) (os':=os') (t':=t_emit_ot_getpay l t') in H; inv H; crush.
-  (* S_Ctx_Emit_OT_Inc1 *)
+  (* S_Ctx_Emit_OT_PMap *)
   - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_label l) in H; inv H; crush.
   - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_label l) in H; inv H; crush.
-  (* S_Ctx_Emit_OT_Inc2 *)
+  (* S_Ctx_Emit_OT_PMap *)
   - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_label l) in H; inv H; crush.
   - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_label l) in H; inv H; crush.
   (* S_Ctx_Emit_OT_Add1 *)
@@ -1565,7 +1567,7 @@ Proof using.
     rewrite List.app_assoc.
     apply distinct_rotate.
     crush.
-  (* S_Inc *)
+  (* S_PMap *)
   - crush.
   (* S_GetPay *)
   - unfold backend_labels at 2.
@@ -1587,15 +1589,15 @@ Proof using.
     apply distinct_rotate.
     unfold backend_labels at 2.
     crush.
-  (* S_FuseInc *)
-  - assert (<< n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >>] ++ b2) by crush.
+  (* S_FusePMap *)
+  - assert (<< n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >>] ++ b2) by crush.
     rewrite H2 in H6.
     rewrite backend_labels_dist in H6.
     unfold backend_labels at 2 in H6.
     simpl in H6.
     rewrite ostream_labels_dist in H6.
     simpl in H6.
-    assert (<< n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> inc (incby + incby') ks :: os2 >>] ++ b2) by crush.
+    assert (<< n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >>] ++ b2) by crush.
     rewrite H3.
     clear H1; clear H2.
     rewrite backend_labels_dist.
@@ -2622,7 +2624,7 @@ Ltac fnv := match goal with
             | [H : C [] [] ?rs ?t --> C [] ?os ?rs ?t' |- _] => apply frontend_no_value' in H; crush
             end.
 
-Ltac trouble_makers := try solve [eapply S_Add; eauto]; try solve [eapply S_FuseInc; eauto].
+Ltac trouble_makers := try solve [eapply S_Add; eauto]; try solve [eapply S_FusePMap; eauto].
 
 Ltac match_emit_ot_add :=
   match goal with
@@ -2635,7 +2637,7 @@ Lemma lc_emit_ot_add :
   forall cx cy cz b os rs l k v,
   well_typed cx ->
   cx = C b os rs (t_emit_ot_add l (t_result k) (t_result v)) ->
-  cy = C b (os ++ [l ->> add k v]) rs (t_label l) ->
+  cy = C b (os ++ [l ->> add k (t_result v)]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
   cy -v cz.
@@ -2798,49 +2800,50 @@ Proof using.
 Qed.
 Hint Resolve lc_ks2.
 
-Ltac match_emit_ot_inc :=
+Ltac match_emit_ot_pmap :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
                                       | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
-Lemma lc_emit_ot_inc :
-  forall cx cy cz b os rs l incby ks,
+Lemma lc_emit_ot_pmap :
+  forall cx cy cz b os rs l f ks,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_inc l (t_result incby) ks) ->
-  cy = C b (os ++ [l ->> inc incby (keyset_to_keyset ks)]) rs (t_label l) ->
+  cx = C b os rs (t_emit_ot_pmap l f ks) ->
+  cy = C b (os ++ [l ->> pmap f (keyset_to_keyset ks)]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
+  value f ->
   value ks ->
   cy -v cz.
 Proof using.
   intros cx cy cz b os rs l incby ks.
   intros WT Heqcx Heqcy cxcy cxcz.
-  intros HV.
-  inversion cxcz; ssame; try solve match_emit_ot_inc.
-  (* S_Emit_OT_Inc *)
+  intros HV1 HV2.
+  inversion cxcz; ssame; try solve match_emit_ot_pmap.
+  (* S_Emit_OT_PMap *)
   - crush.
-  (* S_Ctx_Emit_OT_Inc1 *)
+  (* S_Ctx_Emit_OT_PMap1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Inc2 *)
+  (* S_Ctx_Emit_OT_PMap2 *)
   - apply frontend_no_value' in H1; exfalso; eauto.
 Qed.
-Hint Resolve lc_emit_ot_inc.
+Hint Resolve lc_emit_ot_pmap.
 
-Ltac match_ctx_emit_ot_inc1 :=
+Ltac match_ctx_emit_ot_pmap1 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_inc ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pmap ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_inc l t' t2)); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pmap l t' t2)); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_inc1 :
+Lemma lc_ctx_emit_ot_pmap1 :
   forall cx cy cz b os os' rs t1 t2 t1' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_inc l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_inc l t1' t2) ->
+  cx = C b os rs (t_emit_ot_pmap l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_ot_pmap l t1' t2) ->
   cx --> cy ->
   cx --> cz ->
   C [] [] rs t1 --> C [] os' rs t1' ->
@@ -2849,10 +2852,10 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t1' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_inc1.
-  (* S_Emit_OT_Inc *)
+  inversion cxcz; ssame; try solve match_ctx_emit_ot_pmap1.
+  (* S_Emit_OT_Pmap *)
   - fnv.
-  (* S_Ctx_Emit_OT_Inc1 *)
+  (* S_Ctx_Emit_OT_Pmap1 *)
   - apply frontend_deterministic with (t'':=t1'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H2.
@@ -2860,24 +2863,24 @@ Proof using.
     apply distinct_concat in H4.
     crush.
     inv H3; eauto.
-  (* S_Ctx_Emit_OT_Inc2 *)
+  (* S_Ctx_Emit_OT_Pmap2 *)
   - apply frontend_no_value' in t1t1'; exfalso; eauto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_inc1.
+Hint Resolve lc_ctx_emit_ot_pmap1.
 
-Ltac match_ctx_emit_ot_inc2 :=
+Ltac match_ctx_emit_ot_pmap2 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_inc ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pmap ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_inc l t1 t')); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pmap l t1 t')); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_inc2 :
+Lemma lc_ctx_emit_ot_pmap2 :
   forall cx cy cz b os os' rs t1 t2 t2' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_inc l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_inc l t1 t2') ->
+  cx = C b os rs (t_emit_ot_pmap l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_ot_pmap l t1 t2') ->
   cx --> cy ->
   cx --> cz ->
   value t1 ->
@@ -2887,12 +2890,12 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t2' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_inc2.
-  (* S_Emit_OT_Inc *)
+  inversion cxcz; ssame; try solve match_ctx_emit_ot_pmap2.
+  (* S_Emit_OT_Pmap *)
   - fnv.
-  (* S_Ctx_Emit_OT_Inc1 *)
+  (* S_Ctx_Emit_OT_Pmap1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Inc2 *)
+  (* S_Ctx_Emit_OT_Pmap2 *)
   - apply frontend_deterministic with (t'':=t2'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H3.
@@ -2901,13 +2904,13 @@ Proof using.
     crush.
     inv H4; eauto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_inc2.
+Hint Resolve lc_ctx_emit_ot_pmap2.
 
 Ltac match_ctx_emit_ot_getpay :=
   match goal with
   | [H : _ --> C ?b ?os ?rs (t_emit_ot_getpay ?l ?t) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_getpay l t')); simpl; eauto
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_getpay l t')); simpl; eauto; trouble_makers
     end
   end.
 
@@ -2936,18 +2939,13 @@ Proof using.
     crush.
     inv H3; eauto.
     assumption.
-  (* S_Add *)
-  - match_ctx_emit_ot_getpay.
-    eapply S_Add; eauto.
-  - match_ctx_emit_ot_getpay.
-    eapply S_FuseInc; eauto.
 Qed.
 Hint Resolve lc_ctx_emit_ot_getpay.
 
 Ltac match_emit_ot_getpay :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
-                                      | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto
+                                      | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
@@ -2966,19 +2964,13 @@ Proof using.
   - crush.
   (* S_Ctx_Emit_OT_GetPay *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Add *)
-  - match_emit_ot_getpay.
-    eapply S_Add with (os:=l0 ->> add k0 v :: os' ++ [l ->> getpay k]); eauto.
-  (* S_FuseInc *)
-  - match_emit_ot_getpay.
-    eapply S_FuseInc; eauto.
 Qed.
 Hint Resolve lc_emit_ot_getpay.
 
 Ltac match_ctx_downarrow :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
-                                      | [H': _ --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_downarrow t')); simpl; eauto
+                                      | [H': _ --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_downarrow t')); simpl; eauto; trouble_makers
                                       end
   end.
 
@@ -3019,19 +3011,13 @@ Proof using.
     + eapply S_Empty; eauto. crush.
     + eapply S_Ctx_Downarrow; eauto.
     + crush.
-  (* S_Add *)
-  - match_ctx_downarrow.
-    + eapply S_Add; eauto.
-  (* S_FuseInc *)
-  - match_ctx_downarrow.
-    eapply S_FuseInc; eauto.
 Qed.
 Hint Resolve lc_ctx_downarrow.
 
 Ltac match_claim :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
-                                      | [H': C ?b' ?os' ?rs' ?t'' --> C ?b' ?os' ?rs' ?t' |- _] => gotw (C b os rs t'); simpl; eauto; eapply S_Claim; eauto; crush
+                                      | [H': C ?b' ?os' ?rs' ?t'' --> C ?b' ?os' ?rs' ?t' |- _] => gotw (C b os rs t'); simpl; eauto; trouble_makers; eapply S_Claim; eauto; crush
                                       end
   end.
 
@@ -3052,20 +3038,14 @@ Proof using.
   (* S_Claim *)
   - assert (v = v0) by (eapply unique_result; eauto).
     crush.
-  (* S_Add *)
-  - gotw (C (<< N k v0; [] >> :: b0) os' (l0 ->>> final (add k v0) :: rs0) (t_result v)); eauto.
-    eapply S_Claim; eauto; crush.
-  (* S_FuseInc *)
-  - gotw (C (b1 ++ << n; os1 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) (t_result v)); eauto.
-    eapply S_Claim; eauto; crush.
 Qed.
 Hint Resolve lc_claim.
 
 Lemma lc_getpay :
   forall cx cy cz os rs term k v l os1 b1 b2,
   well_typed cx ->
-  cx = C (b1 ++ <<N k v; l ->> getpay k :: os1>> :: b2) os rs term ->
-  cy = C (b1 ++ <<N k v; os1>> :: b2) os (l ->>> v :: rs) term ->
+  cx = C (b1 ++ <<N k (t_result v); l ->> getpay k :: os1>> :: b2) os rs term ->
+  cy = C (b1 ++ <<N k (t_result v); os1>> :: b2) os (l ->>> v :: rs) term ->
   cx --> cy ->
   cx --> cz ->
   cy -v cz.
@@ -3074,81 +3054,80 @@ Proof using.
   intros WT Heqcx Heqcy cxcy cxcz.
   inversion cxcz; ssame; try solve [subst; eauto].
   (* S_App *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) os0 (l ->>> v :: rs0) (#[ x := v2] t12)); eauto.
+  - gotw (C (b1 ++ << N k (t_result v); os1 >> :: b2) os0 (l ->>> v :: rs0) (#[ x := v2] t12)); eauto.
   (* S_App1 *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k (t_result v); os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app t1' t2)); eauto.
   (* S_App2 *)
-  - gotw (C (b1 ++ << N k v; os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app v1 t2')); eauto.
+  - gotw (C (b1 ++ << N k (t_result v); os1 >> :: b2) (os0 ++ os') (l ->>> v :: rs0) (t_app v1 t2')); eauto.
   (* S_Empty *)
   - destruct b1; crush.
   (* S_First *)
   - destruct b1; simpl in *.
     + inv H1.
-      gotw (C (<< N k v; os1 ++ [l0 ->> op] >> :: b') os' (l ->>> v :: rs0) term0); eauto.
+      gotw (C (<< N k (t_result v); os1 ++ [l0 ->> op] >> :: b') os' (l ->>> v :: rs0) term0); eauto.
       * rewrite <- List.app_comm_cons.
         eapply S_GetPay with (b1:=[]); crush.
     + inv H1.
-      gotw (C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l ->>> v :: rs0) term0); eauto.
+      gotw (C (<< n1; os2 ++ [l0 ->> op] >> :: b1 ++ << N k (t_result v); os1 >> :: b2) os' (l ->>> v :: rs0) term0); eauto.
       * rewrite List.app_comm_cons.
         eapply S_GetPay with (b1:=(<< n1; os2 ++ [l0 ->> op] >> :: b1)); crush.
   (* S_Add *)
   - got.
-    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l0 ->>> final (add k0 v0) :: l ->>> v :: rs0) term0); eauto.
-    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k v; os1 >> :: b2) os' (l ->>> v :: l0 ->>> final (add k0 v0) :: rs0) term0).
+    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k (t_result v); os1 >> :: b2) os' (l0 ->>> final (add k0 v0) :: l ->>> v :: rs0) term0); eauto.
+    * instantiate (1:=C (<< N k0 v0; [] >> :: b1 ++ << N k (t_result v); os1 >> :: b2) os' (l ->>> v :: l0 ->>> final (add k0 v0) :: rs0) term0).
       rewrite List.app_comm_cons; eauto.
     * crush.
-  (* S_Inc *)
-  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k0) (v':=v0) in H1; eauto.
+  (* S_PMap *)
+  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=t_result v) (k':=k0) (v':=v0) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + crush.
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> inc incby ks :: os1'' >> :: x1) in H0; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> pmap f ks :: os1'' >> :: x1) in H0; crush.
       inv H.
-      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
-        one_step. eapply S_Inc; crush.
-      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
+      * instantiate (1:=C ((x ++ << N k (t_result v); os1 >> :: x0) ++ << N k0 (t_app f v0); l0 ->> pmap f (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
+        one_step. eapply S_PMap; crush.
+      * instantiate (1:=C (x ++ << N k (t_result v); os1 >> :: x0 ++ << N k0 (t_app f v0); l0 ->> pmap f (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os0 (l ->>> v :: rs0) term0).
         eauto.
       * crush.
-    (* First secon *)
+    (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> inc incby ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> pmap f ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
-        eauto.
-      * instantiate (1:=C ((b0 ++ << N k0 (v0 + incby); l0 ->> inc incby (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+      * instantiate (1:=C (b0 ++ << N k0 (t_app f v0); l0 ->> pmap f (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0 ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: rs0) term0); eauto.
+      * instantiate (1:=C ((b0 ++ << N k0 (t_app f v0); l0 ->> pmap f (remove Nat.eq_dec k0 ks) :: os1'' >> :: x0) ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
   (* S_GetPay *)
-  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k0) (v':=v0) in H1; eauto.
+  - eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=(t_result v)) (k':=k0) (v':=(t_result v0)) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + crush. inv H5. crush.
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> getpay k0 :: os1' >> :: x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 (t_result v0); l0 ->> getpay k0 :: os1' >> :: x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k0 v0; os1' >> :: b3) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
+      * instantiate (1:=C ((x ++ << N k (t_result v); os1 >> :: x0) ++ << N k0 (t_result v0); os1' >> :: b3) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
         one_step. eapply S_GetPay; crush.
-      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k0 v0; os1' >> :: b3) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
+      * instantiate (1:=C (x ++ << N k (t_result v); os1 >> :: x0 ++ << N k0 (t_result v0); os1' >> :: b3) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
         eauto.
       * crush.
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> getpay k0 :: os1' >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 (t_result v0); l0 ->> getpay k0 :: os1' >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N k0 v0; os1' >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
+      * instantiate (1:=C (b0 ++ << N k0 (t_result v0); os1' >> :: x0 ++ << N k (t_result v); os1 >> :: x1) os0 (l0 ->>> v0 :: l ->>> v :: rs0) term0).
         eauto.
-      * instantiate (1:=C ((b0 ++ << N k0 v0; os1' >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
+      * instantiate (1:=C ((b0 ++ << N k0 (t_result v0); os1' >> :: x0) ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: l0 ->>> v0 :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
   (* S_Last *)
@@ -3162,20 +3141,20 @@ Proof using.
       destruct H0; destruct H0.
       inv H0.
       rewrite H2 in *. clear H2.
-      assert (b1 ++ << N k v; l ->> getpay k :: os1 >> :: x0 ++ [x] = (b1 ++ << N k v; l ->> getpay k :: os1 >> :: x0) ++ [x]) by crush.
+      assert (b1 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0 ++ [x] = (b1 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0) ++ [x]) by crush.
       rewrite H0 in H1; clear H0.
       apply List.app_inj_tail in H1.
       destruct H1.
       subst.
       got.
-      * instantiate (1:=C ((b1 ++ << N k v; os1 >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: l ->>> v :: rs0) term0).
+      * instantiate (1:=C ((b1 ++ << N k (t_result v); os1 >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: l ->>> v :: rs0) term0).
         one_step. eapply S_Last; crush.
-      * instantiate (1:=C (b1 ++ << N k v; os1 >> :: x0 ++ [<< n1; os1' >>]) os0 (l ->>> v :: l0 ->>> final op :: rs0) term0).
+      * instantiate (1:=C (b1 ++ << N k (t_result v); os1 >> :: x0 ++ [<< n1; os1' >>]) os0 (l ->>> v :: l0 ->>> final op :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   - destruct n as [k' v'].
-    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k') (v':=v') in H1; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=(t_result v)) (k':=k') (v':=v') in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + destruct H1. destruct H2. destruct H3.
@@ -3184,37 +3163,37 @@ Proof using.
       * inv H4.
       {
       got.
-      - instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l' ->>> final (inc incby' ks) :: l ->>> v' :: rs0) term0).
-        one_step. eapply S_FuseInc; crush.
-      - instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l ->>> v' :: l' ->>> final (inc incby' ks) :: rs0) term0).
+      - instantiate (1:=C (b0 ++ << N k' (t_result v); os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os0 (l' ->>> final (pmap f' ks) :: l ->>> v :: rs0) term0).
+        one_step. eapply S_FusePMap; crush.
+      - instantiate (1:=C (b0 ++ << N k' (t_result v); os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os0 (l ->>> v :: l' ->>> final (pmap f' ks) :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       - crush.
       }
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; os2 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; os2 ++ l0 ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
-        one_step. eapply S_FuseInc; crush.
-      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: b3) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
+      * instantiate (1:=C ((x ++ << N k (t_result v); os1 >> :: x0) ++ << N k' v'; os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
+        one_step. eapply S_FusePMap; crush.
+      * instantiate (1:=C (x ++ << N k (t_result v); os1 >> :: x0 ++ << N k' v'; os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; os2 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; os2 ++ l0 ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
-        one_step. eapply S_FuseInc; crush.
-      * instantiate (1:=C ((b0 ++ << N k' v'; os2 ++ l0 ->> inc (incby + incby') ks :: os3 >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
+      * instantiate (1:=C (b0 ++ << N k' v'; os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: x0 ++ << N k (t_result v); os1 >> :: x1) os0 (l' ->>> 0 :: l ->>> v :: rs0) term0).
+        one_step. eapply S_FusePMap; crush.
+      * instantiate (1:=C ((b0 ++ << N k' v'; os2 ++ l0 ->> pmap (pmap_compose f' f) ks :: os3 >> :: x0) ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: l' ->>> 0 :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
-  (* S_Inc *)
+  (* S_Prop *)
   - destruct n1 as [k' v'].
-    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=<< n2; os3 >> :: b3) (k:=k) (v:=v) (k':=k') (v':=v') in H2; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=<< n2; os3 >> :: b3) (k:=k) (v:=(t_result v)) (k':=k') (v':=v') in H2; eauto.
     destruct H2; try destruct H1.
     (* Same target *)
     + destruct H2. destruct H3. destruct H4. subst.
@@ -3224,11 +3203,11 @@ Proof using.
     + destruct H1. destruct H1. destruct H1.
       eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; l0 ->> op :: os2 >> :: x1) in H1; crush.
       inv H.
-      eapply target_unique with (b1:=x ++ << N k v; l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+      eapply target_unique with (b1:=x ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x0) (b2:=x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k v; os1 >> :: x0) ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+      * instantiate (1:=C ((x ++ << N k (t_result v); os1 >> :: x0) ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
         one_step. eapply S_Prop; crush.
-      * instantiate (1:=C (x ++ << N k v; os1 >> :: x0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+      * instantiate (1:=C (x ++ << N k (t_result v); os1 >> :: x0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
         one_step. eapply S_GetPay; crush.
       * crush.
     (* First second *)
@@ -3237,24 +3216,24 @@ Proof using.
       destruct x0.
       * inv H.
         simpl in *.
-        eapply target_unique with (b1:=x) (b2:=<< N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+        eapply target_unique with (b1:=x) (b2:=<< N k (t_result v); l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
         inv H1.
         {
         got.
-        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << N k v; os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << N k (t_result v); os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
           one_step. eapply S_Prop; crush.
-        - instantiate (1:=C ((b0 ++ [<< N k' v'; os2 >>]) ++ << N k v; os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
+        - instantiate (1:=C ((b0 ++ [<< N k' v'; os2 >>]) ++ << N k (t_result v); os1 ++ [l0 ->> op] >> :: b3) os0 (l ->>> v :: rs0) term0).
           one_step. eapply S_GetPay; crush.
         - crush.
         }
       * inv H.
         simpl in *.
-        eapply target_unique with (b1:=x) (b2:=s :: x0 ++ << N k v; l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
+        eapply target_unique with (b1:=x) (b2:=s :: x0 ++ << N k (t_result v); l ->> getpay k :: os1 >> :: x1) (b3:=b0) (b4:=<< n2; os3 >> :: b3) in H2; eauto; crush.
         {
         got.
-        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0 ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+        - instantiate (1:=C (b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0 ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
           one_step. eapply S_Prop; crush.
-        - instantiate (1:=C ((b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0) ++ << N k v; os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
+        - instantiate (1:=C ((b0 ++ << N k' v'; os2 >> :: << n2; os3 ++ [l0 ->> op] >> :: x0) ++ << N k (t_result v); os1 >> :: x1) os0 (l ->>> v :: rs0) term0).
           one_step. eapply S_GetPay; crush.
         - crush.
         }
@@ -3296,9 +3275,9 @@ Proof using.
   - gotw (C (<< N k v; [] >> :: b1 ++ << n1; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os' (l0 ->>> final (add k v) :: rs0) term0); eauto.
     repeat (rewrite List.app_comm_cons).
     eauto.
-  (* S_Inc *)
+  (* S_PMap *)
   - destruct n1.
-    eapply target_same_or_different with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=b0) (b4:=b3) (k:=n) (v:=n0) (k':=k) (v':=v) in H1; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=b0) (b4:=b3) (k:=n) (v:=t) (k':=k) (v':=v) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + destruct H1. destruct H2. destruct H3. subst.
@@ -3306,41 +3285,41 @@ Proof using.
       crush.
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=x0 ++ << N k v; l0 ->> inc incby ks :: os1'' >> :: x1) in H0; crush.
+      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=x0 ++ << N k v; l0 ->> pmap f ks :: os1'' >> :: x1) in H0; crush.
       rewrite H2 in *.
       destruct x0.
       * inv H.
         simpl in *.
-        eapply target_unique with (b1:=x ++ [<< N n n0; l ->> op :: os1 >>]) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+        eapply target_unique with (b1:=x ++ [<< N n t; l ->> op :: os1 >>]) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         inv H2.
         {
           got.
-          - instantiate (1:=C ((x ++ [<< N n n0; os1 >>]) ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b3) os0 rs0 term0).
-            one_step. eapply S_Inc; crush.
-          - instantiate (1:=C (x ++ << N n n0; os1 >> :: << N k (v + incby); (l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'') ++ [l ->> op] >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C ((x ++ [<< N n t; os1 >>]) ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b3) os0 rs0 term0).
+            one_step. eapply S_PMap; crush.
+          - instantiate (1:=C (x ++ << N n t; os1 >> :: << N k (t_app f v); (l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'') ++ [l ->> op] >> :: b3) os0 rs0 term0).
             one_step. eapply S_Prop; crush.
           - crush.
         }
       * inv H2.
         inv H.
-        eapply target_unique with (b1:=x ++ << N n n0; l ->> op :: os1 >> :: << n2; os2 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+        eapply target_unique with (b1:=x ++ << N n t; l ->> op :: os1 >> :: << n2; os2 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         {
           got.
-          - instantiate (1:=C ((x ++ << N n n0; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
-            one_step. eapply S_Inc; crush.
-          - instantiate (1:=C (x ++ << N n n0; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C ((x ++ << N n t; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
+            one_step. eapply S_PMap; crush.
+          - instantiate (1:=C (x ++ << N n t; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
             one_step. eapply S_Prop; crush.
           - crush.
         }
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x ++ << N k v; l0 ->> inc incby ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x ++ << N k v; l0 ->> pmap f ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N n n0; l ->> op :: os1 >> :: << n2; os2 >> :: b2) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N n t; l ->> op :: os1 >> :: << n2; os2 >> :: b2) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:= C (b0 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n n0; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
-        one_step. eapply S_Inc; crush.
-      * instantiate (1:= C ((b0 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n n0; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
+      * instantiate (1:= C (b0 ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n t; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
+        one_step. eapply S_PMap; crush.
+      * instantiate (1:= C ((b0 ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n t; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
         one_step. eapply S_Prop; crush.
       * crush.
   (* S_Last *)
@@ -3378,7 +3357,7 @@ Proof using.
         eauto.
       * rewrite <- List.app_assoc.
         eauto.
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   - destruct n1 as [k v].
     destruct n as [k' v'].
     eapply target_same_or_different with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k') (v':=v') in H1; eauto.
@@ -3390,20 +3369,20 @@ Proof using.
         inv H4.
         {
         got.
-        - instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> inc (incby + incby') ks] >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) term0).
+        - instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> pmap (pmap_compose f' f) ks] >> :: b2) os0 (l' ->>> final (pmap f' ks) :: rs0) term0).
           apply ex_intro with 2.
           eapply Step.
-          instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; (os2 ++ [l0 ->> inc incby ks]) ++ [l' ->> inc incby' ks] >> :: b2) os0 rs0 term0).
+          instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; (os2 ++ [l0 ->> pmap f ks]) ++ [l' ->> pmap f' ks] >> :: b2) os0 rs0 term0).
           eapply S_Prop; crush.
           apply one_star.
-          assert ((os2 ++ [l0 ->> inc incby ks]) ++ [l' ->> inc incby' ks] = os2 ++ [l0 ->> inc incby ks] ++ [l' ->> inc incby' ks]) by crush.
+          assert ((os2 ++ [l0 ->> pmap f ks]) ++ [l' ->> pmap f' ks] = os2 ++ [l0 ->> pmap f ks] ++ [l' ->> pmap f' ks]) by crush.
           rewrite H0. clear H0.
           assert (forall x, b0 ++ << N k' v'; os4 >> :: x = (b0 ++ [<< N k' v'; os4 >>]) ++ x) by crush.
           rewrite H0. clear H0.
-          assert (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> inc (incby + incby') ks] >> :: b2 = (b0 ++ [<< N k' v'; os4 >>]) ++ << n2; os2 ++ [l0 ->> inc (incby + incby') ks] >> :: b2) by crush.
+          assert (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> pmap (pmap_compose f' f) ks] >> :: b2 = (b0 ++ [<< N k' v'; os4 >>]) ++ << n2; os2 ++ [l0 ->> pmap (pmap_compose f' f) ks] >> :: b2) by crush.
           rewrite H0. clear H0.
-          eapply S_FuseInc; crush.
-        - instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> inc (incby + incby') ks] >> :: b2) os0 (l' ->>> final (inc incby' ks) :: rs0) term0).
+          eapply S_FusePMap; crush.
+        - instantiate (1:=C (b0 ++ << N k' v'; os4 >> :: << n2; os2 ++ [l0 ->> pmap (pmap_compose f' f) ks] >> :: b2) os0 (l' ->>> final (pmap f' ks) :: rs0) term0).
           one_step. eapply S_Prop; crush.
         - crush.
         }
@@ -3411,47 +3390,47 @@ Proof using.
         inv H4.
         {
         got.
-        - instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
-          one_step. eapply S_FuseInc; crush.
-        - instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
+        - instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
+          one_step. eapply S_FusePMap; crush.
+        - instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
           one_step. eapply S_Prop; crush.
         - crush.
         }
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
       destruct x0; simpl in *.
-      * eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=<< N k' v'; os3 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os4 >> :: x1) in H0; eauto; crush.
+      * eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=<< N k' v'; os3 ++ l0 ->> pmap f ks :: l' ->> pmap f' ks :: os4 >> :: x1) in H0; eauto; crush.
         inv H2.
         inv H.
         eapply target_unique with (b1:=x ++ [<< N k v; l ->> op :: os1 >>]) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         {
         got.
-        - instantiate (1:=C ((x ++ [<< N k v; os1 >>]) ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 ++ [l ->> op] >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
-          one_step. eapply S_FuseInc; crush.
-        - instantiate (1:=C (x ++ << N k v; os1 >> :: << N k' v'; (os3 ++ l0 ->> inc (incby + incby') ks :: os4) ++ [l ->> op] >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
+        - instantiate (1:=C ((x ++ [<< N k v; os1 >>]) ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 ++ [l ->> op] >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
+          one_step. eapply S_FusePMap; crush.
+        - instantiate (1:=C (x ++ << N k v; os1 >> :: << N k' v'; (os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4) ++ [l ->> op] >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
           one_step. eapply S_Prop; crush.
         - crush.
         }
-      * eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=s :: x0 ++ << N k' v'; os3 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os4 >> :: x1) in H0; eauto; crush.
+      * eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x) (b4:=s :: x0 ++ << N k' v'; os3 ++ l0 ->> pmap f ks :: l' ->> pmap f' ks :: os4 >> :: x1) in H0; eauto; crush.
         inv H.
         eapply target_unique with (b1:=x ++ << N k v; l ->> op :: os1 >> :: << n2; os2 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         {
         got.
-        - instantiate (1:=C ((x ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
-          one_step. eapply S_FuseInc; crush.
-        - instantiate (1:=C (x ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
+        - instantiate (1:=C ((x ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
+          one_step. eapply S_FusePMap; crush.
+        - instantiate (1:=C (x ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: b3) os0 (l' ->>> 0 :: rs0) term0).
           one_step. eapply S_Prop; crush.
         - crush.
         }
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x ++ << N k' v'; os3 ++ l0 ->> inc incby ks :: l' ->> inc incby' ks :: os4 >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x ++ << N k' v'; os3 ++ l0 ->> pmap f ks :: l' ->> pmap f' ks :: os4 >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
       eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> op :: os1 >> :: << n2; os2 >> :: b2) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: x0 ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
-        one_step. eapply S_FuseInc; crush.
-      * instantiate (1:=C ((b0 ++ << N k' v'; os3 ++ l0 ->> inc (incby + incby') ks :: os4 >> :: x0) ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
+      * instantiate (1:=C (b0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: x0 ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
+        one_step. eapply S_FusePMap; crush.
+      * instantiate (1:=C ((b0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' f) ks :: os4 >> :: x0) ++ << N k v; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 (l' ->>> 0 :: rs0) term0).
         one_step. eapply S_Prop; crush.
       * crush.
   (* S_Prop *)
@@ -3521,6 +3500,8 @@ Proof using.
 Qed.
 Hint Resolve lc_prop.
 
+(* TODO FINISH CHANGING ALL INC TO PMAP *)
+
 Ltac match_app2 :=
   match goal with
   | [H : _ --> C ?b ?os ?rs (t_app ?t1 ?t2) |- _] => match goal with
@@ -3570,9 +3551,9 @@ Proof using.
   + match_app2.
     * eapply S_Add; crush.
     * eapply S_App2; crush.
-  (* S_Inc *)
+  (* S_PMap *)
   + match_app2.
-    * eapply S_Inc; crush.
+    * eapply S_PMap; crush.
     * eapply S_App2; crush.
   (* S_Last *)
   + match_app2.
@@ -3580,7 +3561,7 @@ Proof using.
     * eapply S_App2; crush.
   (* S_FuseInc *)
   + match_app2.
-    * eapply S_FuseInc; crush.
+    * eapply S_FusePMap; crush.
     * eapply S_App2; crush.
 Qed.
 Hint Resolve lc_app2.
@@ -3588,7 +3569,7 @@ Hint Resolve lc_app2.
 Ltac match_app :=
   match goal with
   | [H : _ --> C ?b ?os ?rs (t_app ?t1 ?t2) |- _] => match goal with
-                                      | [H': C ?b' ?os' ?rs' ?t'' --> C ?b' ?os' ?rs' ?t' |- _] => gotw (C b os rs t'); simpl; eauto
+                                      | [H': C ?b' ?os' ?rs' ?t'' --> C ?b' ?os' ?rs' ?t' |- _] => gotw (C b os rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
@@ -3606,12 +3587,6 @@ Proof using.
   inversion cxcz; ssame; try solve [subst; eauto]; try solve match_app.
   (* S_App1 *)
   + fnv.
-  (* S_Add *)
-  + match_app.
-    * eapply S_Add; eauto.
-  (* S_FuseInc *)
-  + match_app.
-    * eapply S_FuseInc; eauto.
 Qed.
 Hint Resolve lc_app.
 
@@ -3659,17 +3634,17 @@ Proof using.
   + match_app1.
     * eapply S_Add; eauto.
     * eapply S_App1; eauto.
-  (* S_Inc *)
+  (* S_PMap *)
   + match_app1.
-    * eapply S_Inc; eauto.
+    * eapply S_PMap; eauto.
     * eapply S_App1; eauto.
   (* S_Last *)
   + match_app1.
     * eapply S_Last; eauto.
     * eapply S_App1; eauto.
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   + match_app1.
-    * eapply S_FuseInc; eauto.
+    * eapply S_FusePMap; eauto.
     * eapply S_App1; eauto.
 Qed.
 Hint Resolve lc_app1.
@@ -3688,14 +3663,14 @@ Proof using.
   inversion cxcz; ssame; try solve [subst; eauto].
   (* S_Add *)
   - crush.
-  (* S_Inc *)
+  (* S_PMap *)
   - destruct b1; simpl in *.
-    * gotw (C (<< N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b2)  os' rs0 term1).
-      { inv H1; eapply S_Inc with (b1:=[]); crush. }
-      { inv H1; eapply S_First with (os1:=l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1''); crush. }
+    * gotw (C (<< N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b2)  os' rs0 term1).
+      { inv H1; eapply S_PMap with (b1:=[]); crush. }
+      { inv H1; eapply S_First with (os1:=l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1''); crush. }
       { crush. }
-    * gotw (C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (v + incby); l0 ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs0 term1).
-      { inv H1. eapply S_Inc with (b1:=<< n1; os1 ++ [l ->> op] >> :: b1); crush. }
+    * gotw (C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << N k (t_app f v); l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' rs0 term1).
+      { inv H1. eapply S_PMap with (b1:=<< n1; os1 ++ [l ->> op] >> :: b1); crush. }
       { inv H1. eapply S_First; crush. }
       { crush. }
   (* S_Last *)
@@ -3724,38 +3699,41 @@ Proof using.
   (* S_FuseInc *)
   - destruct b1; simpl in *.
     (* b1 = [] *)
-    * gotw (C (<< n; os0 ++ l0 ->> inc (incby + incby') ks :: os2 ++ [l ->> op] >> :: b2) os' (l' ->>> 0 :: rs0) term1).
-      { inv H1. eapply S_FuseInc with (b1:=[]); crush. }
-      { inv H1. assert (os0 ++ l0 ->> inc (incby + incby') ks :: os2 ++ [l ->> op] = (os0 ++ l0 ->> inc (incby + incby') ks :: os2) ++ [l ->> op]) by crush. rewrite H0. eapply S_First; crush. }
+    * gotw (C (<< n; os0 ++ l0 ->> pmap (pmap_compose f' f) ks :: os2 ++ [l ->> op] >> :: b2) os' (l' ->>> 0 :: rs0) term1).
+      { inv H1. eapply S_FusePMap with (b1:=[]); crush. }
+      { inv H1. assert (os0 ++ l0 ->> pmap (pmap_compose f' f) ks :: os2 ++ [l ->> op] = (os0 ++ l0 ->> pmap (pmap_compose f' f) ks :: os2) ++ [l ->> op]) by crush. rewrite H0. eapply S_First; crush. }
       { crush. }
     (* b1 != [] *)
-    * gotw (C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << n; os0 ++ l0 ->> inc (incby + incby') ks :: os2 >> :: b2) os' (l' ->>> 0 :: rs0) term1).
-      { inv H1. eapply S_FuseInc with (b1:=<< n1; os1 ++ [l ->> op] >> :: b1); crush. }
+    * gotw (C (<< n1; os1 ++ [l ->> op] >> :: b1 ++ << n; os0 ++ l0 ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2) os' (l' ->>> 0 :: rs0) term1).
+      { inv H1. eapply S_FusePMap with (b1:=<< n1; os1 ++ [l ->> op] >> :: b1); crush. }
       { inv H1. eapply S_First; crush. }
       { crush. }
 Qed.
 Hint Resolve lc_first.
 
-Lemma lc_inc :
-  forall cx cy cz rs term0 l incby ks os1'' b1 b2 k os v,
+Axiom pmap_compose_assoc : forall f f' t,
+  t_app f (t_app f' t) = t_app (pmap_compose f f') t.
+
+Lemma lc_pmap :
+  forall cx cy cz rs term0 l f ks os1'' b1 b2 k os v,
   well_typed cx ->
-  cx = C (b1 ++ << N k v; l ->> inc incby ks :: os1'' >> :: b2) os rs term0 ->
-  cy = C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os rs term0 ->
+  cx = C (b1 ++ << N k v; l ->> pmap f ks :: os1'' >> :: b2) os rs term0 ->
+  cy = C (b1 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os rs term0 ->
   In k ks ->
   cx --> cy ->
   cx --> cz ->
   cy -v cz.
 Proof using.
-  intros cx cy cz rs term0 l incby ks os1'' b1 b2 k os v WT Heqcx Heqcy HIn cxcy cxcz.
+  intros cx cy cz rs term0 l f ks os1'' b1 b2 k os v WT Heqcx Heqcy HIn cxcy cxcz.
   inversion cxcz; ssame; try solve [subst; eauto].
   (* S_Empty *)
   - destruct b1; crush.
   (* S_Add *)
-  - gotw (C (<< N k0 v0; [] >> :: b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> final (add k0 v0) :: rs0) term1).
+  - gotw (C (<< N k0 v0; [] >> :: b1 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b2) os' (l0 ->>> final (add k0 v0) :: rs0) term1).
     * eapply S_Add; eauto.
-    * eapply S_Inc with (b1:=<< N k0 v0; [] >> :: b1); crush.
+    * eapply S_PMap with (b1:=<< N k0 v0; [] >> :: b1); crush.
     * crush.
-  (* S_Inc *)
+  (* S_PMap *)
   - rename H1 into H0.
     rename b3 into b4.
     rename b0 into b3.
@@ -3766,25 +3744,25 @@ Proof using.
       + destruct H0; destruct H1; destruct H1; destruct H2; subst. inversion H3. subst. crush.
       (* First first *)
       + destruct H0; destruct H0; destruct H0.
-        apply target_unique with (os:=l ->> inc incby ks :: os1'') (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> inc incby0 ks0 :: os1''0 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc incby ks :: os1'' >> :: b2) in H0; crush.
+        apply target_unique with (os:=l ->> pmap f ks :: os1'') (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 v0; l0 ->> pmap f0 ks0 :: os1''0 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> pmap f ks :: os1'' >> :: b2) in H0; crush.
         inv H.
-        apply target_unique with (os:=l0 ->> inc incby0 ks0 :: os1''0) (k:=k0) (v:=v0) (b1:=x ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0) (b2:=x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0 ++ << N k0 v0; l0 ->> inc incby0 ks0 :: os1''0 >> :: x1) in H1; crush.
+        apply target_unique with (os:=l0 ->> pmap f0 ks0 :: os1''0) (k:=k0) (v:=v0) (b1:=x ++ << N k v; l ->> pmap f ks :: os1'' >> :: x0) (b2:=x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k v; l ->> pmap f ks :: os1'' >> :: x0 ++ << N k0 v0; l0 ->> pmap f0 ks0 :: os1''0 >> :: x1) in H1; crush.
         got.
-        * instantiate (1:=C ((x ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (v0 + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
-          one_step. eapply S_Inc; crush.
-        * instantiate (1:=C (x ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N k0 (v0 + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
-          one_step. eapply S_Inc; crush.
+        * instantiate (1:=C ((x ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 (t_app f0 v0); l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
+          one_step. eapply S_PMap; crush.
+        * instantiate (1:=C (x ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N k0 (t_app f0 v0); l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: b4) os0 rs0 term1).
+          one_step. eapply S_PMap; crush.
         * crush.
       (* First second *)
       + destruct H0; destruct H0; destruct H0.
-        apply target_unique with (os:=l ->> inc incby ks :: os1'') (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> inc incby0 ks0 :: os1''0 >> :: x0) (b4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> inc incby ks :: os1'' >> :: b2) in H0; crush.
+        apply target_unique with (os:=l ->> pmap f ks :: os1'') (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 v0; l0 ->> pmap f0 ks0 :: os1''0 >> :: x0) (b4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; l ->> pmap f ks :: os1'' >> :: b2) in H0; crush.
         inv H.
-        eapply target_unique with (os:=l0 ->> inc incby0 ks0 :: os1''0) (k:=k0) (v:=v0) (b1:=x) (b2:=x0 ++ << N k v; l ->> inc incby ks :: os1'' >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) in H1; eauto.
+        eapply target_unique with (os:=l0 ->> pmap f0 ks0 :: os1''0) (k:=k0) (v:=v0) (b1:=x) (b2:=x0 ++ << N k v; l ->> pmap f ks :: os1'' >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) in H1; eauto.
         got.
-        * instantiate (1:=C (b3 ++ << N k0 (v0 + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
-          one_step. eapply S_Inc; crush.
-        * instantiate (1:=C ((b3 ++ << N k0 (v0 + incby0); l0 ->> inc incby0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0) ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
-          one_step. eapply S_Inc; crush.
+        * instantiate (1:=C (b3 ++ << N k0 (t_app f0 v0); l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
+          one_step. eapply S_PMap; crush.
+        * instantiate (1:=C ((b3 ++ << N k0 (t_app f0 v0); l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0) :: os1''0 >> :: x0) ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 rs0 term1).
+          one_step. eapply S_PMap; crush.
         * crush.
     }
   (* S_Last *)
@@ -3802,22 +3780,22 @@ Proof using.
       destruct H0; destruct H0.
       inv H0.
       rewrite H2 in *.
-      assert (b1 ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0 ++ [x]=(b1 ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0) ++ [x]) by crush.
+      assert (b1 ++ << N k v; l ->> pmap f ks :: os1'' >> :: x0 ++ [x]=(b1 ++ << N k v; l ->> pmap f ks :: os1'' >> :: x0) ++ [x]) by crush.
       rewrite H0 in H1.
       apply List.app_inj_tail in H1.
       destruct H1.
       rewrite H4 in *.
       subst.
       got.
-      + instantiate (1:=C ((b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) term1).
+      + instantiate (1:=C ((b1 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) term1).
         one_step. eapply S_Last; crush.
-      + instantiate (1:=C (b1 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) term1).
-        one_step. eapply S_Inc; crush.
+      + instantiate (1:=C (b1 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: rs0) term1).
+        one_step. eapply S_PMap; crush.
       + crush.
     }
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   - destruct n.
-    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=n) (v':=n0) in H1; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=n) (v':=t) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + destruct H1. destruct H2. destruct H3. subst.
@@ -3827,119 +3805,121 @@ Proof using.
         {
         destruct b3.
         - got.
-          + instantiate (1:=C (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) os0 (l' ->>> final (inc incby' (remove Nat.eq_dec n ks0)) :: l0 ->>> 0 :: rs0) term1).
+          + instantiate (1:=C (b0 ++ [<< N n (t_app f' (t_app f0 t)); os2 >>]) os0 (l' ->>> final (pmap f' (remove Nat.eq_dec n ks0)) :: l0 ->>> 0 :: rs0) term1).
             apply ex_intro with 3.
             eapply Step.
-            instantiate (1:=C (b0 ++ [<< N n (n0 + incby0); l' ->> inc incby' ks0 :: os2 >>]) os0 (l0 ->>> final (inc incby0 (remove Nat.eq_dec n ks0)) :: rs0) term1).
+            instantiate (1:=C (b0 ++ [<< N n (t_app f0 t); l' ->> pmap f' ks0 :: os2 >>]) os0 (l0 ->>> final (pmap f0 (remove Nat.eq_dec n ks0)) :: rs0) term1).
             eapply S_Last; crush.
             apply List.remove_In in H0. assumption.
             eapply Step.
-            instantiate (1:=C (b0 ++ [<< N n ((n0 + incby0) + incby'); l' ->> inc incby' (remove Nat.eq_dec n ks0) :: os2 >>]) os0 (l0 ->>> final (inc incby0 (remove Nat.eq_dec n ks0)) :: rs0) term1).
-            eapply S_Inc; crush.
+            instantiate (1:=C (b0 ++ [<< N n (t_app f' (t_app f0 t)); l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >>]) os0 (l0 ->>> final (pmap f0 (remove Nat.eq_dec n ks0)) :: rs0) term1).
+            eapply S_PMap; crush.
             apply one_star.
             eapply S_Last; crush.
             apply List.remove_In in H0. assumption.
-          + instantiate (1:=C (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) os0 (l0 ->>> final (inc (incby0 + incby') (remove Nat.eq_dec n ks0)) :: l' ->>> 0 :: rs0) term1).
+          + instantiate (1:=C (b0 ++ [<< N n (t_app (pmap_compose f' f0) t); os2 >>]) os0 (l0 ->>> final (pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)) :: l' ->>> 0 :: rs0) term1).
             apply ex_intro with 2.
             eapply Step.
-            eapply S_Inc; crush.
+            eapply S_PMap; crush.
             apply one_star.
             eapply S_Last; crush.
-            rewrite PeanoNat.Nat.add_assoc. crush.
             apply List.remove_In in H0. assumption.
-          + crush.
+          + rewrite pmap_compose_assoc; eauto.
         - destruct s.
           got.
-          + instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final (inc incby' (remove Nat.eq_dec n ks0)) :: rs0) term1).
+          + instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)); os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final (pmap f' (remove Nat.eq_dec n ks0)) :: rs0) term1).
             apply ex_intro with 4.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (n0 + incby0); l' ->> inc incby' ks0 :: os2 >> :: << n1; l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            instantiate (1:=C (b0 ++ << N n (t_app f0 t); l' ->> pmap f' ks0 :: os2 >> :: << n0; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
             apply List.remove_In in H0. assumption.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n ((n0 + incby0) + incby'); l' ->> inc incby' (remove Nat.eq_dec n ks0) :: os2 >> :: << n1; l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
-            eapply S_Inc; crush.
+            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)); l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            eapply S_PMap; crush.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; (l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> inc incby' (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)); os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
             apply List.remove_In in H0. assumption.
             apply one_star.
-            assert (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; (l ++ [l0 ->> inc incby0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> inc incby' (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) ++ << n1; l ++ l0 ->> inc incby0 (remove Nat.eq_dec n ks0) :: l' ->> inc incby' (remove Nat.eq_dec n ks0) :: [] >> :: b3) by crush.
+            assert (b0 ++ << N n (t_app f' (t_app f0 t)); os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (t_app f' (t_app f0 t)); os2 >>]) ++ << n0; l ++ l0 ->> pmap f0 (remove Nat.eq_dec n ks0) :: l' ->> pmap f' (remove Nat.eq_dec n ks0) :: [] >> :: b3) by crush.
             rewrite H0.
-            assert (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (n0 + incby0 + incby'); os2 >>]) ++ << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) by crush.
+            assert (b0 ++ << N n (t_app f' (t_app f0 t)); os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (t_app f' (t_app f0 t)); os2 >>]) ++ << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) by crush.
             rewrite H1.
-            eapply S_FuseInc; crush.
-          + instantiate (1:=C (b0 ++ << N n (n0 + incby0 + incby'); os2 >> :: << n1; l ++ [l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+            eapply S_FusePMap; crush.
+          + instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)); os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
             apply ex_intro with 2.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (n0 + (incby0 + incby')); l0 ->> inc (incby0 + incby') (remove Nat.eq_dec n ks0) :: os2 >> :: << n1; l >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
-            eapply S_Inc; crush.
+            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)); l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+            eapply S_PMap; crush.
+            rewrite pmap_compose_assoc; eauto.
             apply one_star.
             eapply S_Prop; crush.
             apply List.remove_In in H0. assumption.
-            rewrite PeanoNat.Nat.add_assoc. crush.
           + crush.
         }
       * inv H4.
         {
           got.
-          * instantiate (1:= C (b0 ++ << N n (n0 + incby); (l ->> inc incby (remove Nat.eq_dec n ks) :: os1) ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b3) os0 (l' ->>> final (inc incby' ks0) :: rs0) term1).
-            one_step. eapply S_FuseInc; crush.
-          * instantiate (1:= C (b0 ++ << N n (n0 + incby); l ->> inc incby (remove Nat.eq_dec n ks) :: os1 ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b3) os0 (l' ->>> final (inc incby' ks0) :: rs0) term1).
-            one_step. eapply S_Inc; crush.
+          * instantiate (1:= C (b0 ++ << N n (t_app f t); (l ->> pmap f (remove Nat.eq_dec n ks) :: os1) ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l' ->>> final (pmap f' ks0) :: rs0) term1).
+            one_step. eapply S_FusePMap; crush.
+          * instantiate (1:= C (b0 ++ << N n (t_app f t); l ->> pmap f (remove Nat.eq_dec n ks) :: os1 ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l' ->>> final (pmap f' ks0) :: rs0) term1).
+            one_step. eapply S_PMap; crush.
           * crush.
         }
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N n n0; os1 ++ l0 ->> inc incby0 ks0 :: l' ->> inc incby' ks0 :: os2 >> :: x1) in H0; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N n t; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x1) in H0; crush.
       inv H.
-      eapply target_unique with (b1:=x ++ << N k v; l ->> inc incby ks :: os1'' >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x ++ << N k v; l ->> pmap f ks :: os1'' >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n n0; os1 ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
-        one_step. eapply S_FuseInc; crush.
-      * instantiate (1:=C (x ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n n0; os1 ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
-        one_step. eapply S_Inc; crush.
+      * instantiate (1:=C ((x ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n t; os1 ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+        one_step. eapply S_FusePMap; crush.
+      * instantiate (1:=C (x ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n t; os1 ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+        one_step. eapply S_PMap; crush.
       * crush.
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N n n0; os1 ++ l0 ->> inc incby0 ks0 :: l' ->> inc incby' ks0 :: os2 >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N n t; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> inc incby ks :: os1'' >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v; l ->> pmap f ks :: os1'' >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N n n0; os1 ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: x0 ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l' ->>> 0 :: rs0) term1).
-        one_step. eapply S_FuseInc; crush.
-      * instantiate (1:=C ((b0 ++ << N n n0; os1 ++ l0 ->> inc (incby0 + incby') ks0 :: os2 >> :: x0) ++ << N k (v + incby); l ->> inc incby (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l' ->>> 0 :: rs0) term1).
-        one_step. eapply S_Inc; crush.
+      * instantiate (1:=C (b0 ++ << N n t; os1 ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0 ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l' ->>> 0 :: rs0) term1).
+        one_step. eapply S_FusePMap; crush.
+      * instantiate (1:=C ((b0 ++ << N n t; os1 ++ l0 ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0) ++ << N k (t_app f v); l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l' ->>> 0 :: rs0) term1).
+        one_step. eapply S_PMap; crush.
       * crush.
 Qed.
-Hint Resolve lc_inc.
+Hint Resolve lc_pmap.
 
-Lemma lc_fuseinc :
-  forall cx cy cz n b1 b2 os os1 os2 rs term0 incby incby' ks l l',
+Axiom pmap_compose_assoc' : forall f f' f'',
+  pmap_compose f (pmap_compose f' f'') = pmap_compose (pmap_compose f f') f''.
+
+Lemma lc_fusepmap :
+  forall cx cy cz n b1 b2 os os1 os2 rs term0 f f' ks l l',
   well_typed cx ->
-  cx = C (b1 ++ << n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) os rs term0 ->
-  cy = C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os (l' ->>> final (inc incby' ks) :: rs) term0 ->
+  cx = C (b1 ++ << n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2) os rs term0 ->
+  cy = C (b1 ++ << n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2) os (l' ->>> final (pmap f' ks) :: rs) term0 ->
   cx --> cy ->
   cx --> cz ->
   cy -v cz.
 Proof using.
-  intros cx cy cz n b1 b2 os os1 os2 rs term0 incby incby' ks l l' WT Heqcx Heqcy cxcy cxcz.
-  remember (b1 ++ << n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) as b.
+  intros cx cy cz n b1 b2 os os1 os2 rs term0 f f' ks l l' WT Heqcx Heqcy cxcy cxcz.
+  remember (b1 ++ << n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2) as b.
   rename Heqb into H0.
   assert (H : cx = C b os rs term0) by assumption.
   remember cx as c.
   rename Heqc into H1.
-  assert (H2 : C (b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os (l' ->>> final (inc incby' ks) :: rs) term0 = cy) by auto.
+  assert (H2 : C (b1 ++ << n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2) os (l' ->>> final (pmap f' ks) :: rs) term0 = cy) by auto.
   inversion cxcz; ssame; try solve [subst; eauto].
   (* S_Empty *)
   - destruct b1; crush.
   (* S_Add *)
   - ssame.
     got.
-    * instantiate (1:=C (<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os' (l0 ->>> final (add k v) :: l' ->>> final (inc incby' ks) :: rs0) term1).
+    * instantiate (1:=C (<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2) os' (l0 ->>> final (add k v) :: l' ->>> final (pmap f' ks) :: rs0) term1).
       one_step. eapply S_Add; crush.
-    * instantiate (1:=C (<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: b2) os' (l' ->>> final (inc incby' ks) :: l0 ->>> final (add k v) :: rs0) term1).
-      one_step. apply S_FuseInc with (b:=<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) (b1:=<< N k v; [] >> :: b1); crush.
+    * instantiate (1:=C (<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2) os' (l' ->>> final (pmap f' ks) :: l0 ->>> final (add k v) :: rs0) term1).
+      one_step. apply S_FusePMap with (b:=<< N k v; [] >> :: b1 ++ << n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2) (b1:=<< N k v; [] >> :: b1); crush.
     * crush.
   (* S_Last *)
   -
@@ -3958,18 +3938,18 @@ Proof using.
       + simpl in *.
         inv H6.
         got.
-        * instantiate (1:=C (b1 ++ [<< n1; os3 >>]) os0 (l0 ->>> final (inc (incby + incby') ks) :: l' ->>> 0 :: rs0) term1).
+        * instantiate (1:=C (b1 ++ [<< n1; os3 >>]) os0 (l0 ->>> final (pmap (pmap_compose f' f) ks) :: l' ->>> 0 :: rs0) term1).
           one_step. eapply S_Last; crush.
-        * instantiate (1:=C (b1 ++ [<< n1; os3 >>]) os0 (l' ->>> final (inc incby' ks) :: l0 ->>> 0 :: rs0) term1).
+        * instantiate (1:=C (b1 ++ [<< n1; os3 >>]) os0 (l' ->>> final (pmap f' ks) :: l0 ->>> 0 :: rs0) term1).
           one_step. eapply S_Last; crush.
         * crush.
       (* os2 != [] *)
       + inv H6.
         got.
-        * instantiate (1:=C (b1 ++ [<< n1; os2 ++ l ->> inc (incby + incby') ks :: os3 >>]) os0 (l0 ->>> final op :: l' ->>> final (inc incby' ks) :: rs0) term1).
+        * instantiate (1:=C (b1 ++ [<< n1; os2 ++ l ->> pmap (pmap_compose f' f) ks :: os3 >>]) os0 (l0 ->>> final op :: l' ->>> final (pmap f' ks) :: rs0) term1).
           one_step. eapply S_Last; crush.
-        * instantiate (1:=C (b1 ++ [<< n1; os2 ++ l ->> inc (incby + incby') ks :: os3 >>]) os0 (l' ->>> final (inc incby' ks) :: l0 ->>> final op :: rs0) term1).
-          one_step. eapply S_FuseInc; crush.
+        * instantiate (1:=C (b1 ++ [<< n1; os2 ++ l ->> pmap (pmap_compose f' f) ks :: os3 >>]) os0 (l' ->>> final (pmap f' ks) :: l0 ->>> final op :: rs0) term1).
+          one_step. eapply S_FusePMap; crush.
         * crush.
     (* b3 != [] *)
     - remember (s :: b3) as bend.
@@ -3977,7 +3957,7 @@ Proof using.
       destruct H0; destruct H0.
       inv H0.
       rewrite H4 in *.
-      assert (b2 ++ << n; os2 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0 ++ [x] = (b2 ++ << n; os2 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0) ++ [x]) by crush.
+      assert (b2 ++ << n; os2 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x0 ++ [x] = (b2 ++ << n; os2 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x0) ++ [x]) by crush.
       rewrite H0 in H1; clear H0.
       apply List.app_inj_tail in H1.
       destruct H1.
@@ -3988,14 +3968,14 @@ Proof using.
       clear H0.
       clear b1.
       got.
-      + instantiate (1:=C ((b2 ++ << n; os2 ++ l ->> inc (incby + incby') ks :: os3 >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: l' ->>> final (inc incby' ks) :: rs0) term1).
+      + instantiate (1:=C ((b2 ++ << n; os2 ++ l ->> pmap (pmap_compose f' f) ks :: os3 >> :: x0) ++ [<< n1; os1' >>]) os0 (l0 ->>> final op :: l' ->>> final (pmap f' ks) :: rs0) term1).
         one_step. eapply S_Last; crush.
-      + instantiate (1:=C (b2 ++ << n; os2 ++ l ->> inc (incby + incby') ks :: os3 >> :: x0 ++ [<< n1; os1' >>]) os0 (l' ->>> final (inc incby' ks) :: l0 ->>> final op :: rs0) term1).
-        assert (forall y, (b2 ++ << n; os2 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0) ++ y = b2 ++ << n; os2 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os3 >> :: x0 ++ y) by crush. rewrite H0.
-        one_step. eapply S_FuseInc; crush.
+      + instantiate (1:=C (b2 ++ << n; os2 ++ l ->> pmap (pmap_compose f' f) ks :: os3 >> :: x0 ++ [<< n1; os1' >>]) os0 (l' ->>> final (pmap f' ks) :: l0 ->>> final op :: rs0) term1).
+        assert (forall y, (b2 ++ << n; os2 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x0) ++ y = b2 ++ << n; os2 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os3 >> :: x0 ++ y) by crush. rewrite H0.
+        one_step. eapply S_FusePMap; crush.
       + crush.
     }
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   - destruct n as [k v].
     destruct n0 as [k' v'].
     {
@@ -4004,7 +3984,7 @@ Proof using.
       (* Same target *)
       + destruct H1; destruct H4; destruct H5; subst.
         {
-        eapply op_same_or_different with (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (lop:=l ->> inc incby ks) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (lop':=l0 ->> inc incby0 ks0) in H6; eauto.
+        eapply op_same_or_different with (os1:=os1) (os2:=l' ->> pmap f' ks :: os2) (lop:=l ->> pmap f ks) (os3:=os3) (os4:=l'0 ->> pmap f'0 ks0 :: os4) (lop':=l0 ->> pmap f0 ks0) in H6; eauto.
         - destruct H6; destruct H0; try destruct H1.
           (* Same first lop *)
           + inv H1. inv H4. crush.
@@ -4013,33 +3993,33 @@ Proof using.
             destruct x0.
             (* First's second is second's first *)
             * simpl in *.
-              apply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (os3:=x) (os4:=l0 ->> inc incby0 ks0 :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H0; crush.
+              apply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> pmap f' ks :: os2) (os3:=x) (os4:=l0 ->> pmap f0 ks0 :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H0; crush.
               inv H4.
               inv H3.
               apply List.app_inv_head in H1.
               inv H1.
-              apply op_unique with (n:=N k' v') (os1:=x ++ [l ->> inc incby ks0]) (os2:=x1) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l ->> inc incby ks0 :: l0 ->> inc incby0 ks0 :: x1 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l ->> inc incby ks0 :: l0 ->> inc incby0 ks0 :: x1) in H3; crush.
+              apply op_unique with (n:=N k' v') (os1:=x ++ [l ->> pmap f ks0]) (os2:=x1) (os3:=os3) (os4:=l'0 ->> pmap f'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l ->> pmap f ks0 :: l0 ->> pmap f0 ks0 :: x1 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l ->> pmap f ks0 :: l0 ->> pmap f0 ks0 :: x1) in H3; crush.
               {
               got.
-              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> inc (incby + incby0 + incby'0) ks0 :: os4 >> :: b4) os0 (l'0 ->>> final (inc incby'0 ks0) :: l0 ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> inc (incby + (incby0 + incby'0)) ks0 :: os4 >> :: b4) os0 (l0 ->>> final (inc (incby0 + incby'0) ks0) :: l'0 ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - rewrite PeanoNat.Nat.add_assoc. crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> pmap (pmap_compose f'0 (pmap_compose f0 f)) ks0 :: os4 >> :: b4) os0 (l'0 ->>> final (pmap f'0 ks0) :: l0 ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> pmap (pmap_compose (pmap_compose f'0 f0) f) ks0 :: os4 >> :: b4) os0 (l0 ->>> final (pmap (pmap_compose f'0 f0) ks0) :: l'0 ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - rewrite pmap_compose_assoc'; eauto.
               }
             (* No overlap *)
             * simpl in *.
-              apply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (os3:=x) (os4:=l1 :: x0 ++ l0 ->> inc incby0 ks0 :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H0; crush.
+              apply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> pmap f' ks :: os2) (os3:=x) (os4:=l1 :: x0 ++ l0 ->> pmap f0 ks0 :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H0; crush.
               inv H3.
               apply List.app_inv_head in H1.
               inv H1.
-              apply op_unique with (n:=N k' v') (os1:=x ++ l ->> inc incby ks :: l' ->> inc incby' ks :: x0) (os2:=x1) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l ->> inc incby ks :: l' ->> inc incby' ks :: x0 ++ l0 ->> inc incby0 ks0 :: x1 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l ->> inc incby ks :: l' ->> inc incby' ks :: x0 ++ l0 ->> inc incby0 ks0 :: x1) in H3; crush.
+              apply op_unique with (n:=N k' v') (os1:=x ++ l ->> pmap f ks :: l' ->> pmap f' ks :: x0) (os2:=x1) (os3:=os3) (os4:=l'0 ->> pmap f'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l ->> pmap f ks :: l' ->> pmap f' ks :: x0 ++ l0 ->> pmap f0 ks0 :: x1 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l ->> pmap f ks :: l' ->> pmap f' ks :: x0 ++ l0 ->> pmap f0 ks0 :: x1) in H3; crush.
               {
               got.
-              - instantiate (1:=C (b3 ++ << N k' v'; (x ++ l ->> inc (incby + incby') ks :: x0) ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: b4) os0 (l'0 ->>> final (inc incby'0 ks0) :: l' ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> inc (incby + incby') ks :: x0 ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: b4) os0 (l' ->>> final (inc incby' ks) :: l'0 ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; (x ++ l ->> pmap (pmap_compose f' f) ks :: x0) ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: b4) os0 (l'0 ->>> final (pmap f'0 ks0) :: l' ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; x ++ l ->> pmap (pmap_compose f' f) ks :: x0 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: b4) os0 (l' ->>> final (pmap f' ks) :: l'0 ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
               - crush.
               }
           (* First second *)
@@ -4047,61 +4027,61 @@ Proof using.
             destruct x0.
             (* First's second is second's first *)
             * simpl in *.
-              eapply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (os3:=x ++ [l0 ->> inc incby0 ks0]) (os4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H0; crush.
+              eapply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> pmap f' ks :: os2) (os3:=x ++ [l0 ->> pmap f0 ks0]) (os4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H0; crush.
               inv H3.
               apply List.app_inv_head in H1.
               inv H1.
-              apply op_unique with (n:=N k' v') (os1:=x) (os2:=l ->> inc incby ks :: l' ->> inc incby' ks :: os2) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l0 ->> inc incby0 ks0 :: l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l0 ->> inc incby0 ks0 :: l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H3; crush.
+              apply op_unique with (n:=N k' v') (os1:=x) (os2:=l ->> pmap f ks :: l' ->> pmap f' ks :: os2) (os3:=os3) (os4:=l'0 ->> pmap f'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l0 ->> pmap f0 ks0 :: l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l0 ->> pmap f0 ks0 :: l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H3; crush.
               inv H1.
               {
               got.
-              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + (incby'0 + incby')) ks0 :: os2 >> :: b4) os0 (l'0 ->>> final (inc (incby'0 + incby') ks0) :: l' ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0 + incby') ks0 :: os2 >> :: b4) os0 (l' ->>> final (inc incby' ks0) :: l'0 ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - rewrite PeanoNat.Nat.add_assoc. crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose (pmap_compose f' f'0) f0) ks0 :: os2 >> :: b4) os0 (l'0 ->>> final (pmap (pmap_compose f' f'0) ks0) :: l' ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f' (pmap_compose f'0 f0)) ks0 :: os2 >> :: b4) os0 (l' ->>> final (pmap f' ks0) :: l'0 ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - rewrite pmap_compose_assoc'; eauto.
               }
             (* No overlap *)
             * simpl in *.
-              eapply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> inc incby' ks :: os2) (os3:=x ++ l0 ->> inc incby0 ks0 :: l1 :: x0) (os4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H0; crush.
+              eapply op_unique with (n:=N k' v') (os1:=os1) (os2:=l' ->> pmap f' ks :: os2) (os3:=x ++ l0 ->> pmap f0 ks0 :: l1 :: x0) (os4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H0; crush.
               inv H3.
               apply List.app_inv_head in H1.
               inv H1.
-              apply op_unique with (n:=N k' v') (os1:=x) (os2:=l1 :: x0 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) (os3:=os3) (os4:=l'0 ->> inc incby'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l0 ->> inc incby0 ks0 :: l1 :: x0 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l0 ->> inc incby0 ks0 :: l1 :: x0 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) in H3; crush.
+              apply op_unique with (n:=N k' v') (os1:=x) (os2:=l1 :: x0 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) (os3:=os3) (os4:=l'0 ->> pmap f'0 ks0 :: os4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b3 ++ << N k' v'; x ++ l0 ->> pmap f0 ks0 :: l1 :: x0 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b4) (b1:=b3) (b2:=b4) (os:=x ++ l0 ->> pmap f0 ks0 :: l1 :: x0 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) in H3; crush.
               {
               got.
-              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: x0 ++ l ->> inc (incby + incby') ks :: os2 >> :: b4) os0 (l'0 ->>> final (inc incby'0 ks0) :: l' ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
-              - instantiate (1:=C (b3 ++ << N k' v'; (os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: x0) ++ l ->> inc (incby + incby') ks :: os2 >> :: b4) os0 (l' ->>> final (inc incby' ks) :: l'0 ->>> 0 :: rs0) term1).
-                one_step. eapply S_FuseInc; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: x0 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b4) os0 (l'0 ->>> final (pmap f'0 ks0) :: l' ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
+              - instantiate (1:=C (b3 ++ << N k' v'; (os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: x0) ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b4) os0 (l' ->>> final (pmap f' ks) :: l'0 ->>> 0 :: rs0) term1).
+                one_step. eapply S_FusePMap; crush.
               - crush.
               }
         }
       (* First first *)
       + destruct H0; destruct H0; destruct H0.
-        apply target_unique with (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) in H0; crush.
+        apply target_unique with (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k' v'; os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4 >> :: x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2) in H0; crush.
         inv H3.
-        apply target_unique with (os:=os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4) (k:=k') (v:=v') (b1:=x ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: x0) (b2:=x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: x0 ++ << N k' v'; os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4 >> :: x1) in H1; crush.
+        apply target_unique with (os:=os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4) (k:=k') (v:=v') (b1:=x ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: x0) (b2:=x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: x0 ++ << N k' v'; os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4 >> :: x1) in H1; crush.
         got.
-        * instantiate (1:=C ((x ++ << N k v; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: x0) ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: b4) os0 (l'0 ->>> 0 :: l' ->>> 0 :: rs0) term1).
-          one_step. eapply S_FuseInc; crush.
-        * instantiate (1:=C (x ++ << N k v; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: x0 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: b4) os0 (l' ->>> 0 :: l'0 ->>> 0 :: rs0) term1).
-          one_step. eapply S_FuseInc; crush.
+        * instantiate (1:=C ((x ++ << N k v; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: x0) ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: b4) os0 (l'0 ->>> 0 :: l' ->>> 0 :: rs0) term1).
+          one_step. eapply S_FusePMap; crush.
+        * instantiate (1:=C (x ++ << N k v; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: x0 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: b4) os0 (l' ->>> 0 :: l'0 ->>> 0 :: rs0) term1).
+          one_step. eapply S_FusePMap; crush.
         * crush.
       (* First second *)
       + destruct H0; destruct H0; destruct H0.
-        apply target_unique with (os:=os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2) (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4 >> :: x0) (b4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: b2) in H0; crush.
+        apply target_unique with (os:=os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2) (k:=k) (v:=v) (b1:=b1) (b2:=b2) (b3:=x ++ << N k' v'; os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4 >> :: x0) (b4:=x1) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=b1 ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2) in H0; crush.
         inv H3.
-        apply target_unique with (os:=os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4) (k:=k') (v:=v') (b1:=x) (b2:=x0 ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k' v'; os3 ++ l0 ->> inc incby0 ks0 :: l'0 ->> inc incby'0 ks0 :: os4 >> :: x0 ++ << N k v; os1 ++ l ->> inc incby ks :: l' ->> inc incby' ks :: os2 >> :: x1) in H1; crush.
+        apply target_unique with (os:=os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4) (k:=k') (v:=v') (b1:=x) (b2:=x0 ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: x1) (b3:=b3) (b4:=b4) (os0:=os0) (rs0:=rs0) (t0:=term1) (b:=x ++ << N k' v'; os3 ++ l0 ->> pmap f0 ks0 :: l'0 ->> pmap f'0 ks0 :: os4 >> :: x0 ++ << N k v; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: x1) in H1; crush.
         got.
-        * instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: x0 ++ << N k v; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: x1) os0 (l'0 ->>> 0 :: l' ->>> 0 :: rs0) term1).
-          one_step. eapply S_FuseInc; crush.
-        * instantiate (1:=C ((b3 ++ << N k' v'; os3 ++ l0 ->> inc (incby0 + incby'0) ks0 :: os4 >> :: x0) ++ << N k v; os1 ++ l ->> inc (incby + incby') ks :: os2 >> :: x1) os0 (l' ->>> 0 :: l'0 ->>> 0 :: rs0) term1).
-          one_step. eapply S_FuseInc; crush.
+        * instantiate (1:=C (b3 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: x0 ++ << N k v; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: x1) os0 (l'0 ->>> 0 :: l' ->>> 0 :: rs0) term1).
+          one_step. eapply S_FusePMap; crush.
+        * instantiate (1:=C ((b3 ++ << N k' v'; os3 ++ l0 ->> pmap (pmap_compose f'0 f0) ks0 :: os4 >> :: x0) ++ << N k v; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: x1) os0 (l' ->>> 0 :: l'0 ->>> 0 :: rs0) term1).
+          one_step. eapply S_FusePMap; crush.
         * crush.
     }
 Qed.
-Hint Resolve lc_fuseinc.
+Hint Resolve lc_fusepmap.
 
 Lemma lc_last :
   forall cx cy cz b1 n1 os rs term0 os1' l op,
