@@ -908,7 +908,36 @@ Axiom load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
   c = C b os0 rs0 term0 ->
   b = b1 ++ <<N k t; os>> :: b2 ->
   not (value t) ->
-  exists t', C [] [] rs0 t --> C [] [] rs0 t'.
+  exists c', C b os0 rs0 term0 --> c'.
+
+Lemma op_reduction_exists : forall c b b1 b2 rs0 os0 term0 k t os l op,
+  well_typed c ->
+  c = C b os0 rs0 term0 ->
+  b = b1 ++ <<N k t; l ->> op :: os>> :: b2 ->
+  exists c', C b os0 rs0 term0 --> c'.
+Proof using.
+  intros c b b1 b2 rs0 os0 term0 k t os l op WT Hceq Hbeq.
+  destruct op; subst.
+  - destruct (List.in_dec Nat.eq_dec k l0).
+    + eapply ex_intro; eapply S_PMap; eauto.
+    + destruct b2.
+      * eapply ex_intro; eapply S_Last; eauto.
+      * destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
+  - destruct b2.
+    + eapply ex_intro; eapply S_Last; eauto.
+    + destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
+  - destruct (Nat.eq_dec n k).
+    + destruct (value_dec t); subst.
+      * assert (has_type empty t Result) by (eapply graph_typing; eauto).
+        destruct t; try solve [inv H0]; try solve [inv H0; inv H3]; try solve [inv H].
+        eapply ex_intro; eapply S_GetPay; eauto; crush.
+      * eapply load_exists in WT; eauto.
+    + destruct b2.
+      * eapply ex_intro; eapply S_Last; eauto; crush.
+      * destruct s; eapply ex_intro; eapply S_Prop; eauto; crush.
+Unshelve.
+auto.
+Qed.
 
 Theorem progress : forall b os rs t T,
   well_typed (C b os rs t) ->
@@ -963,77 +992,14 @@ Proof with eauto.
         - destruct H0.
           eauto.
         - destruct H0. destruct H0. destruct H0. destruct H0. destruct H0.
-          unfold get_config_backend in H0.
+          simpl in *.
           destruct x1.
-          apply List.in_split in H1.
-          destruct H1. destruct H1.
-          unfold get_ostream in H1.
-          destruct x1.
-          + simpl in *.
-            rename x into op.
-            destruct op; destruct n.
-            * {
-              destruct (List.in_dec Nat.eq_dec n l0).
-              - subst; eapply ex_intro; eapply S_PMap; eauto.
-              - subst.
-                destruct x2.
-                + eapply ex_intro; eapply S_Last; eauto.
-                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                  crush.
-              }
-            * {
-              subst; destruct x2.
-              - eapply ex_intro; eapply S_Last; eauto.
-              - destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                crush.
-              }
-            * {
-              destruct (Nat.eq_dec n n0).
-              - destruct (value_dec t).
-                + assert (has_type empty t Result) by (eapply graph_typing; eauto).
-                  destruct t; try solve [inv H3]; try solve [inv H3; inv H6]; try solve [inv H2].
-                  subst; eapply ex_intro; eapply S_GetPay; eauto.
-                + subst. eapply load_exists with (b1:=x0) (b2:=x2) in WT'; eauto.
-                  destruct WT'.
-                  eapply ex_intro; eapply S_Load; eauto.
-              - subst.
-                destruct x2.
-                + eapply ex_intro; eapply S_Last; eauto. crush.
-                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                  crush.
-              }
-          + destruct l0.
-            destruct o; destruct n; simpl in *.
-            * {
-              destruct (List.in_dec Nat.eq_dec n l0).
-              - subst; eapply ex_intro; eapply S_PMap; eauto.
-              - subst.
-                destruct x2.
-                + eapply ex_intro; eapply S_Last; eauto.
-                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                  crush.
-              }
-            * {
-              subst; destruct x2.
-              - eapply ex_intro; eapply S_Last; eauto.
-              - destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                crush.
-              }
-            * {
-              destruct (Nat.eq_dec n n1).
-              - destruct (value_dec t).
-                + assert (has_type empty t Result) by (eapply graph_typing; eauto).
-                  destruct t; try solve [inv H3]; try solve [inv H3; inv H6]; try solve [inv H2].
-                  subst; eapply ex_intro; eapply S_GetPay; eauto.
-                + subst. eapply load_exists with (b1:=x0) (b2:=x2) in WT'; eauto.
-                  destruct WT'.
-                  eapply ex_intro; eapply S_Load; eauto.
-              - subst.
-                destruct x2.
-                + eapply ex_intro; eapply S_Last; eauto. crush.
-                + destruct s; eapply ex_intro; eapply S_Prop; eauto.
-                  crush.
-              }
+          simpl in *.
+          destruct l.
+          + crush.
+          + destruct l.
+            destruct n.
+            eapply op_reduction_exists with (b1:=x0) (b2:=x2); eauto.
         }
     + right.
       destruct H.
@@ -1065,9 +1031,6 @@ Proof with eauto.
       * destruct H0. inversion H0; ssame; eauto.
     + destruct H.
       inversion H; ssame; eauto.
-Unshelve.
-auto.
-auto.
 Qed.
 
 Theorem progress' : forall b os rs t T,
@@ -1106,8 +1069,7 @@ Proof using.
                 inv H0; eauto.
               + right.
                 remember WT. clear Heqw.
-                eapply load_exists with (os:=[]) (b1:=[]) (b2:=b) (k:=n) (rs0:=rs) (t:=t0) in w; eauto; destruct w.
-                * eapply ex_intro; eapply S_Load with (b1:=[]) (os:=[]); try solve [eauto; crush].
+                eapply load_exists with (os:=[]) (b1:=[]) (b2:=b) (k:=n) (rs0:=rs) (t:=t0) in w; eauto.
             - right.
               destruct H0.
               inversion H0; ssame; try solve [match goal with | [H : value _ |- _] => inv H end].
@@ -1127,44 +1089,9 @@ Proof using.
             }
           * right.
             destruct l as [l op].
-            {
-            destruct op.
-              - destruct b; destruct n.
-                + destruct (List.in_dec Nat.eq_dec n l0).
-                  * eapply ex_intro; eapply S_PMap with (b1:=[]); eauto; crush.
-                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                + destruct s. destruct (List.in_dec Nat.eq_dec n l0).
-                  * eapply ex_intro; eapply S_PMap with (b1:=[]); eauto; crush.
-                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n t1) (op:=pmap t0 l0); eauto; crush.
-              - destruct b; destruct n.
-                + eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                + destruct s. eapply ex_intro; eapply S_Prop with (b1:=[]) (l:=l) (n1:=N n t1) (op:=add n0 t0); eauto; crush.
-              - destruct b; destruct n.
-                + destruct (Nat.eq_dec n n0).
-                  * {
-                    destruct (value_dec t0).
-                    - assert (has_type empty t0 Result) by (eapply graph_typing; eauto).
-                      destruct t0; try solve [inv H1]; try solve [inv H2; inv H5]; try solve [inv H2].
-                      subst; eapply ex_intro; eapply S_GetPay with (b1:=[]) (b2:=[]); eauto; crush.
-                    - subst. eapply load_exists with (b1:=[]) (k:=n0) (t:=t0) (b2:=[]) in WT; eauto.
-                      destruct WT.
-                      eapply ex_intro; eapply S_Load with (k:=n0) (b1:=[]) (b2:=[]); eauto; crush.
-                      crush.
-                    }
-                  * eapply ex_intro; eapply S_Last with (b1:=[]); eauto; crush.
-                + destruct s. destruct (Nat.eq_dec n n0).
-                  * {
-                    destruct (value_dec t0).
-                    - assert (has_type empty t0 Result) by (eapply graph_typing; eauto).
-                      destruct t0; try solve [inv H1]; try solve [inv H2; inv H5]; try solve [inv H2].
-                      subst; eapply ex_intro; eapply S_GetPay with (b1:=[]); eauto; crush.
-                    - subst. eapply load_exists with (b1:=[]) (k:=n0) (t:=t0) in WT; eauto.
-                      destruct WT.
-                      eapply ex_intro; eapply S_Load with (k:=n0) (b1:=[]); eauto; crush.
-                      crush.
-                    }
-                  * eapply ex_intro; eapply S_Prop with (b1:=[]) (n1:=N n t0) (op:=getpay n0); eauto; crush.
-            }
+            destruct n.
+            eapply op_reduction_exists with (b1:=[]); eauto.
+            crush.
           }
       * destruct l as [l op].
         right.
@@ -1179,9 +1106,6 @@ Proof using.
           + destruct s; eapply ex_intro; eapply S_First; eauto; crush.
         }
   - right. assumption.
-Unshelve.
-auto.
-auto.
 Qed.
 
 Inductive appears_free_in : string -> term -> Prop :=
