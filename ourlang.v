@@ -960,12 +960,23 @@ Proof using.
   - right; intro; inv H1; eauto.
 Qed.
 
+Axiom pfold_value : forall op f t ks,
+  op = pfold f t ks ->
+  value f.
+
 Axiom load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
   well_typed c ->
   c = C b os0 rs0 term0 ->
   b = b1 ++ <<N k t; os>> :: b2 ->
   not (value t) ->
   exists c', C b os0 rs0 term0 --> c'.
+Axiom loadpfold_exists : forall c b b1 b2 rs0 os0 term0 k t t1 t2 t3 l os' os,
+  well_typed c ->
+  c = C b os0 rs0 term0 ->
+  b = b1 ++ <<N k t; os ++ l ->> pfold t1 t2 t3 :: os'>> :: b2 ->
+  not (value t2) ->
+  exists c', C b os0 rs0 term0 --> c'.
+
 
 Lemma op_reduction_exists : forall c b b1 b2 rs0 os0 term0 k t os l op,
   well_typed c ->
@@ -991,7 +1002,7 @@ Proof using.
         - assert (has_type empty t1 Result) by (eapply graph_typing'; eauto).
           destruct t1; try solve [inv H]; try solve [inv H0].
           eapply ex_intro; eapply S_Last; eauto.
-        - admit.
+        - eapply loadpfold_exists with (b2:=[]) (os:=[]); eauto. simpl; crush.
         }
       * destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
 Unshelve.
@@ -1000,7 +1011,7 @@ auto.
 auto.
 auto.
 unfold not_fold_or_done; right; eauto.
-Admitted.
+Qed.
 
 Theorem progress : forall b os rs t T,
   well_typed (C b os rs t) ->
@@ -3332,9 +3343,6 @@ Ltac tu2 := match goal with
 
 Axiom pmap_value : forall op f ks,
   op = pmap f ks ->
-  value f.
-Axiom pfold_value : forall op f t ks,
-  op = pfold f t ks ->
   value f.
 
 Lemma lc_load :
