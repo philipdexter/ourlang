@@ -779,6 +779,7 @@ Definition get_config_backend (c : config) :=
 match c with
 | C b _ _ _ => b
 end.
+
 Axiom all_labels :
   forall c,
   well_typed c ->
@@ -964,19 +965,184 @@ Axiom pfold_value : forall op f t ks,
   op = pfold f t ks ->
   value f.
 
-Axiom load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
+Lemma frontend_into_load : forall t t' k os c b1 b2 os0 rs0 term0,
+  C [] [] rs0 t --> C [] [] rs0 t' ->
   well_typed c ->
-  c = C b os0 rs0 term0 ->
-  b = b1 ++ <<N k t; os>> :: b2 ->
-  not (value t) ->
-  exists c', C b os0 rs0 term0 --> c'.
-Axiom loadpfold_exists : forall c b b1 b2 rs0 os0 term0 k t t1 t2 t3 l os' os,
-  well_typed c ->
-  c = C b os0 rs0 term0 ->
-  b = b1 ++ <<N k t; os ++ l ->> pfold t1 t2 t3 :: os'>> :: b2 ->
-  not (value t2) ->
-  exists c', C b os0 rs0 term0 --> c'.
+  c = C (b1 ++ <<N k t; os>>:: b2) os0 rs0 term0 ->
+  exists c', c --> c'.
+Proof using.
+  induction t; intros; inversion H; subst; try solve [destruct os1; match goal with | [H : _ = [] |- _] => inv H end]; try solve [match goal with | [H : [] = _ |- _] => inv H end]; try solve [eapply ex_intro; eapply S_Load; eauto].
+Qed.
 
+Lemma frontend_into_loadpfold : forall t t1 t2 t3 t' l k os os' c b1 b2 os0 rs0 term0,
+  C [] [] rs0 t2 --> C [] [] rs0 t' ->
+  well_typed c ->
+  c = C (b1 ++ <<N k t; os ++ l ->> pfold t1 t2 t3 :: os'>>:: b2) os0 rs0 term0 ->
+  exists c', c --> c'.
+Proof using.
+  induction t; intros; inversion H; subst; try solve [destruct os1; match goal with | [H : _ = [] |- _] => inv H end]; try solve [match goal with | [H : [] = _ |- _] => inv H end]; try solve [eapply ex_intro; eapply S_LoadPFold; eauto].
+Qed.
+
+Inductive next_reduction : term -> term -> Prop :=
+| nr_app1 : forall t1 t2 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_app t1 t2) t1'
+| nr_app2 : forall t1 t2 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_app t1 t2) t2'
+| nr_app : forall t1 t2, value t1 -> value t2 -> next_reduction (t_app t1 t2) (t_app t1 t2)
+| nr_var : forall x, next_reduction (t_var x) (t_var x)
+| nr_ks_cons1 : forall t1 t2 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_ks_cons t1 t2) t1'
+| nr_ks_cons2 : forall t1 t2 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_ks_cons t1 t2) t2'
+| nr_downarrow : forall t t', not (value t) -> next_reduction t t' -> next_reduction (t_downarrow t) t'
+| nr_downarrow_claim : forall t, value t -> next_reduction (t_downarrow t) (t_downarrow t)
+| nr_emit_ot_pfold1 : forall l t1 t2 t3 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
+| nr_emit_ot_pfold2 : forall l t1 t2 t3 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
+| nr_emit_ot_pfold3 : forall l t1 t2 t3 t', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
+| nr_emit_ot_pfold : forall l t1 t2 t3, value t1 -> value t2 -> value t3 -> next_reduction (t_emit_ot_pfold l t1 t2 t3) (t_emit_ot_pfold l t1 t2 t3)
+| nr_emit_ot_pmap1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_pmap l t1 t2) t'
+| nr_emit_ot_pmap2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_pmap l t1 t2) t'
+| nr_emit_ot_pmap : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_ot_pmap l t1 t2) (t_emit_ot_pmap l t1 t2)
+| nr_emit_ot_add1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_add l t1 t2) t'
+| nr_emit_ot_add2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_add l t1 t2) t'
+| nr_emit_ot_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_ot_add l t1 t2) (t_emit_ot_add l t1 t2).
+Hint Constructors next_reduction.
+
+Lemma result_in_dec : forall rs l, (exists v, In (l ->>> v) rs) \/ (not (exists v, In (l ->>> v) rs)).
+Proof using.
+  induction rs; intros.
+  - right; crush.
+  - destruct IHrs with (l:=l).
+    + left. destruct H. exists x. crush.
+    + destruct a.
+      destruct (Nat.eq_dec n l).
+      * subst. left. exists n0. crush.
+      * right. intro.
+        destruct H0.
+        apply List.in_inv in H0.
+        {
+        destruct H0.
+        - crush.
+        - apply H. exists x. crush.
+        }
+Qed.
+
+Lemma next_reduction_to_reduction :
+  forall t t' rs0,
+  well_typed (C [] [] rs0 t) ->
+  next_reduction t t' ->
+  (exists t'' os, C [] [] rs0 t --> C [] os rs0 t'') \/ (exists l, t' = t_downarrow (t_label l) /\ not (exists v, In (l ->>> v) rs0)).
+Proof using.
+  intros t t' rs0 WT NR.
+  induction NR; subst.
+  - destruct IHNR; [| left; destruct H0 as [t''[os]] | destruct H0 as [l]; destruct H0; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_App1; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_App2; eauto.
+  - inversion WT. destruct H3. unfold config_has_type in H3. inv H3.
+    apply canonical_forms_fun in H8. destruct H8. destruct H3. subst.
+    left. eapply ex_intro; eapply ex_intro; eapply S_App; eauto. assumption.
+  - inversion WT. destruct H1. unfold config_has_type in H1. inv H1. inv H5.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_KS1; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_KS2; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Downarrow; eauto.
+  - inversion WT. destruct H2. unfold config_has_type in H2. inv H2. destruct t; try solve [inv H]; try solve [inv H6].
+    rename n into l.
+    destruct (result_in_dec rs0 l).
+    + destruct H2. eauto.
+    + right. eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold1; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold2; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H4; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold3; eauto.
+  - eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PMap1; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PMap2; eauto.
+  - eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_Add1; eauto.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
+    + inversion WT; split; try split; crush. inversion H3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_Add2; eauto.
+  - inversion WT.
+    destruct H3. unfold config_has_type in H3. inv H3.
+    destruct t1; destruct t2; try solve [inv H10; inv H5]; try solve [inv H11; inv H5]; try solve [inv H]; try solve [inv H0].
+    eauto.
+Qed.
+
+Lemma term_to_next_reduction :
+  forall t, well_typed (C [] [] [] t) -> not (value t) -> exists t', next_reduction t t'.
+Proof using.
+  induction t; intros WT; intros; eauto.
+  - destruct (value_dec t1); destruct (value_dec t2); eauto.
+    + remember H1. clear Heqn. apply IHt2 in H1. destruct H1. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+  - crush.
+  - crush.
+  - crush.
+  - crush.
+  - destruct (value_dec t1); destruct (value_dec t2).
+    + assert (value (t_ks_cons t1 t2)) by eauto; crush.
+    + remember H1. clear Heqn. apply IHt2 in H1. destruct H1. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+  - destruct (value_dec t).
+    + assert (exists l, t = t_label l).
+      {
+        inversion WT.
+        destruct H3.
+        unfold config_has_type in H3. inversion H3; subst.
+        inversion H7; subst; try solve [inv H0]; try solve [inv H4].
+        exists l. reflexivity.
+      }
+      destruct H1. eauto.
+    + remember H0. clear Heqn. apply IHt in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H3; eauto.
+  - destruct (value_dec t1).
+    + destruct (value_dec t2).
+      * {
+        destruct (value_dec t3).
+        - eauto.
+        - remember H2. clear Heqn0. apply IHt3 in H2. destruct H2. eauto. inversion WT; split; try split; crush. inversion H5; eauto.
+        }
+      * remember H1. clear Heqn0. apply IHt2 in H1. destruct H1. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn0. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H3; eauto.
+  - destruct (value_dec t1).
+    + destruct (value_dec t2).
+      * eauto.
+      * remember H1. clear Heqn0. apply IHt2 in H1. destruct H1. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn0. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H3; eauto.
+  - destruct (value_dec t1).
+    + destruct (value_dec t2).
+      * eauto.
+      * remember H1. clear Heqn0. apply IHt2 in H1. destruct H1. eauto. inversion WT; split; try split; crush. inversion H4; eauto.
+    + remember H0. clear Heqn0. apply IHt1 in H0. destruct H0. eauto. inversion WT; split; try split; crush. inversion H3; eauto.
+Qed.
+
+(* TODO require that t is found inside the graph *)
+Axiom emittability : forall t t' os' rs0,
+  C [] [] rs0 t --> C [] os' rs0 t' ->
+  os' = [].
+
+Axiom dependent_loadpfold_after : forall l' l c b1 b2 t1 t2 t3 n os os' os0 rs0 term0,
+  c = C (b1 ++ <<n; os ++ l' ->> pfold t1 t2 t3 :: os'>> :: b2) os0 rs0 term0 ->
+  next_reduction t2 (t_downarrow (t_label l)) ->
+  well_typed c ->
+  (exists v, In (l ->>> v) rs0) \/ (exists n' op b2' b2'' os'', b2 = b2' ++ <<n'; os''>> :: b2'' /\ In (l ->> op) os).
 
 Lemma op_reduction_exists : forall c b b1 b2 rs0 os0 term0 k t os l op,
   well_typed c ->
@@ -996,13 +1162,59 @@ Proof using.
     + destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
   - destruct (List.in_dec Nat.eq_dec k l0).
     + eapply ex_intro; eapply S_PFold; eauto.
+      Unshelve.
+      auto.
+      auto.
     + destruct b2.
       * {
         destruct (value_dec t1).
         - assert (has_type empty t1 Result) by (eapply graph_typing'; eauto).
           destruct t1; try solve [inv H]; try solve [inv H0].
           eapply ex_intro; eapply S_Last; eauto.
-        - eapply loadpfold_exists with (b2:=[]) (os:=[]); eauto. simpl; crush.
+          - rename H into HNV. apply term_to_next_reduction in HNV.
+            + destruct HNV. remember H. clear Heqn0. rename n0 into NR. apply next_reduction_to_reduction with (rs0:=rs0) in H.
+              * {
+                destruct H.
+                - destruct H as [t''[os']].
+                  assert (os'=[]) by (eapply emittability; eauto). subst.
+                  eapply frontend_into_loadpfold with (t1:=t0) (t':=t'') (rs0:=rs0) (b2:=[]) (os:=[]); simpl; eauto.
+                  Unshelve.
+                  auto.
+                  auto.
+                  right; eauto.
+                - destruct H as [l']. destruct H. subst.
+                  destruct all_labels with (c:=C (b1 ++ [<< N k t; l ->> pfold t0 t1 l0 :: os >>]) os0 rs0 term0) (l:=l').
+                  + eauto.
+                  + exfalso; eauto.
+                  + destruct H as [op [b2 [s [b3]]]]. simpl in *. destruct H.
+                    edestruct dependent_loadpfold_after with (c:=C (b1 ++ [<< N k t; l ->> pfold t0 t1 l0 :: os >>]) os0 rs0 term0).
+                    * instantiate (4:=[]).
+                      instantiate (9:=[]).
+                      simpl; eauto.
+                    * instantiate (1:=l'). assumption.
+                    * assumption.
+                    * exfalso; eauto.
+                    * destruct H2 as [n' [op' [b2' [b2'' [os'']]]]].
+                      destruct H2.
+                      exfalso; eauto.
+                }
+              * inversion WT; split; try split; crush.
+                apply distinct_concat in H1.
+                destruct H1.
+                inv H3.
+                assert (ostream_labels os = []) by (destruct os; crush). rewrite H3 in *. simpl in *.
+                assert (ostream_labels os0 = []) by (destruct os0; crush). rewrite H4 in *. simpl in *.
+                rewrite <- H6. eauto.
+                inv H4.
+                apply distinct_concat in H6.
+                destruct H6.
+                apply distinct_concat in H4.
+                crush.
+                assert (has_type empty t1 Result) by (eapply graph_typing'; eauto).
+                eauto.
+            + inversion WT; split; try split; crush.
+              assert (has_type empty t1 Result) by (eapply graph_typing'; eauto).
+              eauto.
         }
       * destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
 Unshelve.
@@ -1010,7 +1222,72 @@ auto.
 auto.
 auto.
 auto.
-unfold not_fold_or_done; right; eauto.
+Qed.
+
+Lemma load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
+  well_typed c ->
+  c = C b os0 rs0 term0 ->
+  b = b1 ++ <<N k t; os>> :: b2 ->
+  not (value t) ->
+  exists c', C b os0 rs0 term0 --> c'.
+Proof using.
+  intros c b b1 b2 rs0 os0 term0 k t os WT Hceq Hbeq HNV.
+  assert (has_type empty t Result) by (eapply graph_typing; eauto).
+  destruct t; try solve [inv H; inv H2].
+  - apply term_to_next_reduction in HNV.
+    + destruct HNV. remember H0. clear Heqn. rename n into NR. apply next_reduction_to_reduction with (rs0:=rs0) in H0.
+      * {
+        destruct H0.
+        - destruct H0 as [t''[os']].
+          assert (os'=[]) by (eapply emittability; eauto). subst.
+          eapply frontend_into_load with (t:=(t_app t1 t2)) (t':=t'') (rs0:=rs0); eauto.
+        - destruct H0 as [l]. destruct H0. subst.
+          destruct all_labels with (c:=C (b1 ++ << N k (t_app t1 t2); os >> :: b2) os0 rs0 term0) (l:=l); eauto.
+          + destruct H0. simpl in *. exfalso. apply H1. eauto.
+          + destruct H0 as [op [b3 [s [b4]]]]. destruct H0. destruct s. simpl in *.
+            apply List.in_split in H2. destruct H2. destruct H2. subst.
+            destruct x; simpl in *.
+            * destruct n. eapply op_reduction_exists; eauto.
+            * destruct l0. rewrite H0. destruct n. eapply op_reduction_exists; eauto.
+              crush.
+        }
+      * inversion WT; split; try split; crush; eauto.
+        apply distinct_concat in H2.
+        destruct H2.
+        apply distinct_concat in H4.
+        destruct H4.
+        apply distinct_concat in H5.
+        crush.
+    + inversion WT; split; try split; crush; eauto.
+  - assert (value (t_result n)) by crush.
+    exfalso; apply HNV; eauto.
+  - apply term_to_next_reduction in HNV.
+    + destruct HNV. remember H0. clear Heqn. rename n into NR. apply next_reduction_to_reduction with (rs0:=rs0) in H0.
+      * {
+        destruct H0.
+        - destruct H0 as [t''[os']].
+          assert (os'=[]) by (eapply emittability; eauto). subst.
+          eapply frontend_into_load with (t:=t_downarrow t) (t':=t'') (rs0:=rs0); eauto.
+        - destruct H0 as [l]. destruct H0. subst.
+          destruct all_labels with (c:=C (b1 ++ << N k (t_downarrow t); os >> :: b2) os0 rs0 term0) (l:=l); eauto.
+          + destruct H0. simpl in *. exfalso. apply H1. eauto.
+          + destruct H0 as [op [b3 [s [b4]]]]. destruct H0. destruct s. simpl in *.
+            apply List.in_split in H2. destruct H2. destruct H2. subst.
+            destruct x; simpl in *.
+            * destruct n. eapply op_reduction_exists; eauto.
+            * destruct l0. rewrite H0. destruct n. eapply op_reduction_exists; eauto.
+              crush.
+        }
+      * inversion WT; split; try split; crush; eauto.
+        apply distinct_concat in H2.
+        destruct H2.
+        apply distinct_concat in H4.
+        destruct H4.
+        apply distinct_concat in H5.
+        crush.
+    + inversion WT; split; try split; crush; eauto.
+Unshelve.
+auto.
 Qed.
 
 Theorem progress : forall b os rs t T,
