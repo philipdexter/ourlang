@@ -1756,11 +1756,20 @@ auto.
 auto.
 Qed.
 
-Axiom waiting_fold_value : forall c b os os' rs l t t1 t2 t3,
-  c = C b os rs t ->
-  well_typed c ->
-  os = l ->> pfold t1 t2 t3 :: os' ->
+Lemma waiting_fold_value : forall b os rs l t t1 t2 t3,
+  well_typed (C b (l ->> pfold t1 t2 t3 :: os) rs t) ->
   value t2.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  inv H9.
+  inv H6.
+  destruct H4.
+  subst.
+  auto.
+Qed.
 
 Lemma cht_tail : forall a b os rs t T E,
   config_has_type (C (a :: b) os rs t) T E ->
