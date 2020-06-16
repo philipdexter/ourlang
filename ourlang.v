@@ -1,5 +1,3 @@
-(* TODO GRAPH TYPING *)
-(* EMITTABILITY *)
 
 Require Import CpdtTactics.
 From Coq Require Import Lists.List.
@@ -300,16 +298,6 @@ Inductive config_has_type : config -> type -> bool -> Prop :=
     has_type empty t T E ->
     config_has_type (C b os rs t) T E.
 Hint Constructors config_has_type.
-
-Axiom graph_typing : forall n k t,
-    n = N k t ->
-    has_type empty t Result false.
-Axiom graph_typing' : forall op f t ks,
-    op = pfold f t ks ->
-    has_type empty t Result false.
-Axiom graph_typing'' : forall op f t ks,
-    op = pfold f t ks ->
-    has_type empty f (Arrow Result (Arrow Result Result false) false) false.
 
 (* ****** end typing *)
 
@@ -1028,10 +1016,6 @@ Proof using.
   - right; intro; inv H1; eauto.
 Qed.
 
-Axiom pfold_value : forall op f t ks,
-  op = pfold f t ks ->
-  value f.
-
 Lemma frontend_into_load : forall t t' k os c b1 b2 os0 rs0 term0,
   C [] [] rs0 t --> C [] [] rs0 t' ->
   well_typed c ->
@@ -1203,7 +1187,136 @@ Proof using.
     + remember H0. clear Heqn0. apply IHt1 in H0. destruct H0. eauto. easy_wt.
 Qed.
 
-(* TODO require that t is found inside the graph *)
+Lemma well_typed_backend_dist' : forall b b',
+  well_typed_backend (b ++ b') ->
+  well_typed_backend b /\ well_typed_backend b'.
+Proof using.
+  induction b; intros.
+  - crush.
+  - simpl in *. inv H. apply IHb in H4. destruct H4. crush.
+Qed.
+Hint Resolve well_typed_backend_dist'.
+
+Lemma well_typed_backend_dist : forall b b',
+  well_typed_backend b ->
+  well_typed_backend b' ->
+  well_typed_backend (b ++ b').
+Proof using.
+  induction b; intros.
+  - eauto.
+  - simpl; destruct a. destruct n; constructor; inv H; eauto.
+Qed.
+Hint Resolve well_typed_backend_dist.
+
+Lemma graph_typing : forall b1 b2 os0 rs0 os t0 k t,
+    well_typed (C (b1 ++ <<N k t; os>> :: b2) os0 rs0 t0) ->
+    has_type empty t Result false.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_backend_dist' in H8.
+  destruct H8.
+  inv H2.
+  auto.
+Qed.
+
+Lemma well_typed_ostream_dist' : forall os os',
+  well_typed_ostream (os ++ os') ->
+  well_typed_ostream os /\ well_typed_ostream os'.
+Proof using.
+  induction os; intros.
+  - eauto.
+  - simpl in *; destruct a; destruct o; constructor; inv H; eauto;
+    try solve [constructor; eauto; apply IHos in H2; crush];
+    try solve [apply IHos in H2; crush].
+Qed.
+Hint Resolve well_typed_ostream_dist'.
+
+Lemma well_typed_ostream_dist : forall os os',
+  well_typed_ostream os ->
+  well_typed_ostream os' ->
+  well_typed_ostream (os ++ os').
+Proof using.
+  induction os; intros.
+  - eauto.
+  - simpl; destruct a; destruct o; constructor; inv H; eauto.
+Qed.
+Hint Resolve well_typed_ostream_dist.
+
+Lemma graph_typing' : forall b1 n os l f v ks os' b2 os0 rs0 t0,
+    well_typed (C (b1 ++ <<n; os ++ l ->> pfold f v ks :: os'>> :: b2) os0 rs0 t0) ->
+    has_type empty v Result false.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_backend_dist' in H8.
+  destruct H8.
+  inv H2.
+  apply well_typed_ostream_dist' in H7.
+  destruct H7.
+  inv H3.
+  inv H12.
+  auto.
+Qed.
+
+Lemma well_typed_top_ostream_dist : forall os os',
+  well_typed_top_ostream os ->
+  well_typed_top_ostream os' ->
+  well_typed_top_ostream (os ++ os').
+Proof using.
+  induction os; intros.
+  - eauto.
+  - simpl; destruct a; destruct o; constructor; inv H; eauto.
+Qed.
+Hint Resolve well_typed_top_ostream_dist.
+
+Lemma well_typed_top_ostream_dist' : forall os os',
+  well_typed_top_ostream (os ++ os') ->
+  well_typed_top_ostream os /\ well_typed_top_ostream os'.
+Proof using.
+  induction os; intros.
+  - eauto.
+  - simpl in *; destruct a; destruct o;
+    inv H; apply IHos in H4; destruct H4; constructor; auto.
+Qed.
+Hint Resolve well_typed_top_ostream_dist'.
+
+Lemma graph_typing''' : forall b os l f v ks os' rs0 t0,
+    well_typed (C b (os ++ l ->> pfold f v ks :: os') rs0 t0) ->
+    has_type empty v Result false.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_top_ostream_dist' in H9.
+  destruct H9.
+  inv H2.
+  crush.
+Qed.
+
+Lemma graph_typing'' : forall b1 n os l f v ks os' b2 os0 rs0 t0,
+    well_typed (C (b1 ++ <<n; os ++ l ->> pfold f v ks :: os'>> :: b2) os0 rs0 t0) ->
+    has_type empty f (Arrow Result (Arrow Result Result false) false) false.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_backend_dist' in H8.
+  destruct H8.
+  inv H2.
+  apply well_typed_ostream_dist' in H7.
+  destruct H7.
+  inv H3.
+  inv H12.
+  auto.
+Qed.
+
 Axiom emittability : forall t t' os' rs0,
   C [] [] rs0 t --> C [] os' rs0 t' ->
   os' = [].
@@ -1238,7 +1351,7 @@ Proof using.
     + destruct b2.
       * {
         destruct (value_dec t1).
-        - assert (has_type empty t1 Result false) by (eapply graph_typing'; eauto).
+        - assert (has_type empty t1 Result false) by (eapply graph_typing' with (os:=[]) (b2:=[]); eauto).
           destruct t1; try solve [inv H]; try solve [inv H0].
           eapply ex_intro; eapply S_Last; eauto.
           - rename H into HNV. apply term_to_next_reduction in HNV.
@@ -1280,18 +1393,13 @@ Proof using.
                 destruct H6.
                 apply distinct_concat in H4.
                 crush.
-                assert (has_type empty t1 Result false) by (eapply graph_typing'; eauto).
+                assert (has_type empty t1 Result false) by (eapply graph_typing' with (os:=[]); eauto).
                 eauto.
             + inversion WT; split; try split; crush.
-              assert (has_type empty t1 Result false) by (eapply graph_typing'; eauto).
+              assert (has_type empty t1 Result false) by (eapply graph_typing' with (os:=[]); eauto).
               eauto.
         }
       * destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
-Unshelve.
-auto.
-auto.
-auto.
-auto.
 Qed.
 
 Lemma load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
@@ -1302,7 +1410,7 @@ Lemma load_exists : forall c b b1 b2 rs0 os0 term0 k t os,
   exists c', C b os0 rs0 term0 --> c'.
 Proof using.
   intros c b b1 b2 rs0 os0 term0 k t os WT Hceq Hbeq HNV.
-  assert (has_type empty t Result false) by (eapply graph_typing; eauto).
+  assert (has_type empty t Result false) by (subst; eapply graph_typing; eauto).
   destruct t; try solve [inv H; inv H2].
   - apply term_to_next_reduction in HNV.
     + destruct HNV. remember H0. clear Heqn. rename n into NR. apply next_reduction_to_reduction with (rs0:=rs0) in H0.
@@ -1356,8 +1464,6 @@ Proof using.
         apply distinct_concat in H5.
         crush.
     + inversion WT; split; try split; crush; eauto.
-Unshelve.
-auto.
 Qed.
 
 Lemma cht_app1 : forall b os rs t1 t2 T E,
@@ -1754,15 +1860,12 @@ Proof using.
             auto.
             auto.
             assert (value t1) by (eapply waiting_fold_value; eauto).
-            assert (has_type empty t1 Result false) by (eapply graph_typing'; eauto).
+            assert (has_type empty t1 Result false) by (eapply graph_typing''' with (os:=[]); eauto).
             destruct t1; try solve [inv H; inv H4]; try solve [inv H0]; try solve [inv H1].
             right. eauto.
           + destruct s; eapply ex_intro; eapply S_First; eauto; crush.
         }
   - right. assumption.
-Unshelve.
-auto.
-auto.
 Qed.
 
 Inductive appears_free_in : string -> term -> Prop :=
@@ -1914,63 +2017,6 @@ Proof using.
   intros. inv H. eauto.
 Qed.
 Hint Resolve wtto_cons.
-
-Lemma well_typed_backend_dist' : forall b b',
-  well_typed_backend (b ++ b') ->
-  well_typed_backend b /\ well_typed_backend b'.
-Proof using.
-  induction b; intros.
-  - crush.
-  - simpl in *. inv H. apply IHb in H4. destruct H4. crush.
-Qed.
-Hint Resolve well_typed_backend_dist'.
-
-Lemma well_typed_backend_dist : forall b b',
-  well_typed_backend b ->
-  well_typed_backend b' ->
-  well_typed_backend (b ++ b').
-Proof using.
-  induction b; intros.
-  - eauto.
-  - simpl; destruct a. destruct n; constructor; inv H; eauto.
-Unshelve.
-auto.
-Qed.
-Hint Resolve well_typed_backend_dist.
-
-Lemma well_typed_top_ostream_dist : forall os os',
-  well_typed_top_ostream os ->
-  well_typed_top_ostream os' ->
-  well_typed_top_ostream (os ++ os').
-Proof using.
-  induction os; intros.
-  - eauto.
-  - simpl; destruct a; destruct o; constructor; inv H; eauto.
-Qed.
-Hint Resolve well_typed_top_ostream_dist.
-
-Lemma well_typed_ostream_dist' : forall os os',
-  well_typed_ostream (os ++ os') ->
-  well_typed_ostream os /\ well_typed_ostream os'.
-Proof using.
-  induction os; intros.
-  - eauto.
-  - simpl in *; destruct a; destruct o; constructor; inv H; eauto;
-    try solve [constructor; eauto; apply IHos in H2; crush];
-    try solve [apply IHos in H2; crush].
-Qed.
-Hint Resolve well_typed_ostream_dist'.
-
-Lemma well_typed_ostream_dist : forall os os',
-  well_typed_ostream os ->
-  well_typed_ostream os' ->
-  well_typed_ostream (os ++ os').
-Proof using.
-  induction os; intros.
-  - eauto.
-  - simpl; destruct a; destruct o; constructor; inv H; eauto.
-Qed.
-Hint Resolve well_typed_ostream_dist.
 
 Lemma emit_well_typed_top_ostream : forall t os rs t' T E,
   config_has_type (C [] [] rs t) T E ->
@@ -2515,14 +2561,11 @@ Proof using.
           auto.
           auto.
           assert (value t1) by (eapply waiting_fold_value; eauto).
-          assert (has_type empty t1 Result false) by (eapply graph_typing'; eauto).
+          assert (has_type empty t1 Result false) by (eapply graph_typing''' with (os:=[]); eauto).
           destruct t1; try solve [inv H; inv H4]; try solve [inv H1]; try solve [inv H2].
           right. eauto.
         }
     + crush.
-Unshelve.
-auto.
-auto.
 Qed.
 
 Definition stuck c : Prop := normal_form c /\ ~ dry c.
@@ -4277,9 +4320,41 @@ Ltac tu2 := match goal with
               eapply (@target_unique _ _ b1 (b' ++ <<N k' t'; os'>> :: b2) b3 b4) in H; eauto; crush
             end.
 
-Axiom pmap_value : forall op f ks,
-  op = pmap f ks ->
+Lemma pmap_value : forall b1 b2 n l os0 rs0 t0 f ks os os',
+  well_typed (C (b1 ++ <<n; os ++ l ->> pmap f ks :: os'>> :: b2) os0 rs0 t0) ->
   value f.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_backend_dist' in H8.
+  destruct H8.
+  inv H2.
+  apply well_typed_ostream_dist' in H7.
+  destruct H7.
+  inv H3.
+  inv H12.
+  auto.
+Qed.
+
+Lemma pfold_value : forall b1 b2 n l os0 rs0 t0 f t ks os os',
+  well_typed (C (b1 ++ <<n; os ++ l ->> pfold f t ks :: os'>> :: b2) os0 rs0 t0) ->
+  value f.
+Proof using.
+  intros.
+  inv H.
+  destruct H2 as [T[E]].
+  inv H.
+  apply well_typed_backend_dist' in H8.
+  destruct H8.
+  inv H2.
+  apply well_typed_ostream_dist' in H7.
+  destruct H7.
+  inv H3.
+  inv H12.
+  auto.
+Qed.
 
 Lemma lc_load :
   forall cx cy cz b1 b2 k os t t' term0 os0 rs0,
@@ -4323,7 +4398,7 @@ Proof using.
       * one_step. instantiate (1:=C (b0 ++ << N k0 (t_app f t'); l ->> pmap f (remove Nat.eq_dec k0 ks) :: os1'' >> :: b3) os1 rs term1).
         eapply S_Load; eauto.
         eapply S_App2 with (os:=[]); eauto.
-        remember (pmap f ks) as op; eapply pmap_value; eauto.
+        remember (pmap f ks) as op; subst op; eapply pmap_value with (os:=[]); eauto.
       * crush.
     + destruct Hfirst as [b' [b'' [b''']]].
       tu1.
@@ -4364,7 +4439,7 @@ Proof using.
           eapply S_App2 with (os:=[]).
           instantiate (1:=t0).
           reflexivity.
-          eapply pfold_value; eauto.
+          eapply pfold_value with (os:=[]); eauto.
           assumption.
         - crush.
         }
@@ -4463,7 +4538,7 @@ Proof using.
       crush.
       remember (N k0 t0) as n.
       exists Result, false.
-      constructor; eauto. eapply graph_typing; eauto.
+      constructor; eauto. subst n. eapply graph_typing; eauto.
     + destruct Hfirst as [b' [b'' [b''']]].
       tu1.
       got.
@@ -4496,8 +4571,6 @@ Proof using.
         one_step; eapply S_Load; eauto; crush.
       * crush.
 Unshelve.
-auto.
-auto.
 auto.
 auto.
 Qed.
@@ -4969,8 +5042,6 @@ Proof using.
         one_step; eapply S_LoadPFold with (k:=k) (t:=t) (t1':=t1') (os:=os) (l:=l) (f:=f) (ks:=ks) (b2:=b''') (os':=os') (b1:=(b0 ++ << N k0 t0; os2 ++ l0 ->> pfold f0 t1'0 ks0 :: os'0 >> :: b'')); eauto; crush.
       * crush.
 Unshelve.
-auto.
-auto.
 auto.
 auto.
 auto.
