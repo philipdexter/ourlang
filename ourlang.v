@@ -832,37 +832,6 @@ Axiom all_labels :
   forall l,
   (exists v, In (l ->>> v) (get_config_rstream c)) \/ (exists op b1 s b2, get_config_backend c = b1 ++ s :: b2 /\ In (l ->> op) (get_ostream s)).
 
-Axiom fresh' :
-  forall c b os os' rs t1 t2 t',
-  c = C b os rs (t_app t1 t2) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-Axiom fresh'' :
-  forall c b os os' rs t t',
-  c = C b os rs (t_downarrow t) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-Axiom fresh''' :
-  forall c b os rs l os' t' t1 t2 t3,
-  c = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-Axiom fresh'''' :
-  forall c b os rs l t1 t2 os' t',
-  c = C b os rs (t_emit_ot_pmap l t1 t2) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-Axiom fresh''''' :
-  forall c b os os' rs t1 t2 t',
-  c = C b os rs (t_ks_cons t1 t2) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-Axiom fresh'''''' :
-  forall c b os rs l t1 t2 os' t',
-  c = C b os rs (t_emit_ot_add l t1 t2) ->
-  well_typed c ->
-  well_typed (C b (os ++ os') rs t').
-
 Lemma cons_app :
   forall {A: Type} (x : A) xs,
   x :: xs = [x] ++ xs.
@@ -941,6 +910,17 @@ Proof using.
   - apply canonical_forms_fun in HV2. destruct HV2 as [x [u]]; subst. exists x, u, (t_ks_cons k ks); eauto. split.
     right. exists k, ks. eauto. eauto. eauto.
 Qed.
+
+Lemma canonical_forms_result : forall t E,
+  has_type empty t Result E ->
+  value t ->
+  exists r, t = t_result r.
+Proof.
+  destruct t; intros; try solve [inv H0; inv H].
+  eauto.
+Qed.
+Hint Resolve canonical_forms_result.
+
 
 Lemma frontend_agnostic :
   forall os rs t t',
@@ -2277,7 +2257,6 @@ Proof with eauto.
       assert (E2 = false) by (eapply value_no_emit; eauto); subst.
       assert (E3 = false) by (eapply value_no_emit; eauto); subst.
       eapply well_typed_top_ostream_dist; eauto.
-      constructor; eauto. destruct t; try solve [inv H13; inv 4]; try solve [inv H1]. eauto.
   - inv Hht.
     inv H9.
     exists false.
@@ -2626,6 +2605,18 @@ Ltac apply_preservation :=
   | [H: C _ _ _ _ --> C _ _ _ _ |- _] => eapply preservation in H; eauto
   end.
 
+Axiom fresh :
+  forall b os rs t t' os',
+  distinct (config_labels (C b os rs t)) ->
+  C b os rs t --> C b (os ++ os') rs t' ->
+  distinct (config_labels (C b (os ++ os') rs t')).
+
+Axiom fresh' :
+  forall b os rs t os' t',
+  distinct (config_keys (C b os rs t)) ->
+  C b os rs t --> C b (os ++ os') rs t' ->
+  distinct (config_keys (C b (os ++ os') rs t')).
+
 Lemma well_typed_preservation :
   forall c1 c2,
   well_typed c1 ->
@@ -2633,174 +2624,71 @@ Lemma well_typed_preservation :
   well_typed c2.
 Proof using.
   intros.
-  inversion H0; inversion H; eapply WT; crush; try solve [apply_preservation]; try solve [inv H1; apply_preservation];
-  try solve [
-  match goal with
-  | [ H : config_has_type _ _ |- _] => inv H
-  end;
-  match goal with
-  | [ H : has_type _ _ _ |- _] => inv H
-  end;
-  apply_preservation;
-  match goal with
-  | [ H : config_has_type _ _ |- _] => inv H
-  end;
-  eauto].
-  (* S_Emit_OT_PFold *)
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (os':=[l ->> pfold f t (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (os':=[l ->> pfold f t (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (os':=[l ->> pfold f t (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  (* S_Emit_OT_PMap *)
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=f) (os':=[l ->> pmap f (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=f) (os':=[l ->> pmap f (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=f) (os':=[l ->> pmap f (keyset_to_keyset ks)]) (t':=t_label l) in H; inv H; crush.
-  (* S_Emit_OT_Add *)
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k (t_result v)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k (t_result v)]) (t':=t_label l) in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t_result k) (os':=[l ->> add k (t_result v)]) (t':=t_label l) in H; inv H; crush.
-  (* S_Claim auto handled *)
-  (* S_Ctx_Downarrow *)
-  - apply fresh'' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t:=t) (t':=t') in H; inv H; crush.
-  - apply fresh'' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t:=t) (t':=t') in H; inv H; crush.
-  - apply fresh'' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t:=t) (t':=(t_downarrow t')) in H; inv H; crush.
-  (* S_Ctx_Emit_OT_PFold1 *)
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t' t2 t3) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t' t2 t3) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t' t2 t3) in H; inv H; crush.
-  (* S_Ctx_Emit_OT_PFold2 *)
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t' t3) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t' t3) in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t' t3) in H; inv H; crush.
-  (* S_Ctx_Emit_OT_PFold3 *)
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t2 t') in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t2 t') in H; inv H; crush.
-  - eapply fresh''' with (b:=b) (os:=os) (rs:=rs) (l:=l)  (os':=os') (t':=t_emit_ot_pfold l t1 t2 t') in H; inv H; crush.
-  (* S_Ctx_Emit_OT_PMap1 *)
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1' t2) in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1' t2) in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1' t2) in H; inv H; crush.
-  (* S_Ctx_Emit_OT_PMap2 *)
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1 t2') in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1 t2') in H; inv H; crush.
-  - eapply fresh'''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (os':=os') (t':=t_emit_ot_pmap l t1 t2') in H; inv H; crush.
-  (* S_Ctx_Emit_OT_Add1 *)
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1' t2) (t2:=t2) (os':=os') in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1' t2) (t2:=t2) (os':=os') in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1' t2) (t2:=t2) (os':=os') in H; inv H; crush.
-  (* S_Ctx_Emit_OT_Add2 *)
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1 t2') (t2:=t2) (os':=os') in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1 t2') (t2:=t2) (os':=os') in H; inv H; crush.
-  - eapply fresh'''''' with (b:=b) (os:=os) (rs:=rs) (l:=l) (t1:=t1) (t':=t_emit_ot_add l t1 t2') (t2:=t2) (os':=os') in H; inv H; crush.
+  inversion H0; inversion H; eapply WT; subst;
+  try solve [match goal with | [H : exists _ _, _|- _] => destruct H as [T[E]] end; apply preservation with (T:=T) (E:=E) in H0; auto; destruct H0; destruct H0; inv H0; eauto];
+  try solve [match goal with | [H : distinct (config_keys _) |- _] => eapply fresh' in H end; [|eauto]; crush];
+  try solve [match goal with | [H : distinct (config_labels _) |- _] => eapply fresh in H end; [|eauto]; crush];
+  try solve [apply_preservation].
   (* S_App  *)
-  - apply_preservation. destruct H0. destruct H0. exists x0, x2. assumption.
-  (* S_App1 *)
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=t1) (t2:=t2) (t':=t_app t1' t2) in H; inv H; crush.
-  (* S_App2 *)
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
-  - apply fresh' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=v1) (t2:=t2) (t':=t_app v1 t2') in H; inv H; crush.
-  (* S_KS1 *)
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k' ks) in H; inv H; crush.
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k' ks) in H; inv H; crush.
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k' ks) in H; inv H; crush.
-  (* S_KS2 *)
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k ks') in H; inv H; crush.
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k ks') in H; inv H; crush.
-  - apply fresh''''' with (b:=b) (os:=os) (rs:=rs) (os':=os') (t1:=k) (t2:=ks) (t':=t_ks_cons k ks') in H; inv H; crush.
+  - crush.
+  - crush.
+  - destruct H7 as [T0[E]]. apply_preservation. destruct H0. exists T0, x0. crush.
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
-  - unfold ostream_keys in H8.
-    exists x, x0.
-    destruct op; inv H2; constructor; eauto.
+  - crush.
   - destruct op; crush.
-  - unfold backend_labels. simpl.
-    unfold backend_labels in H9. simpl in H9.
-    destruct op; crush.
-    + apply distinct_rotate.
-      remember (ostream_labels os' ++ rstream_labels rs) as y.
-      assert (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
-              (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
-      rewrite H2.
-      rewrite List.app_assoc in H9.
-      apply distinct_rotate_rev with (x:=l) in H9.
-      crush.
-    + apply distinct_rotate.
-      remember (ostream_labels os' ++ rstream_labels rs) as y.
-      assert (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b') ++ y =
-              (ostream_labels os1 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b')) ++ y) by crush.
-      rewrite H2.
-      rewrite List.app_assoc in H9.
-      apply distinct_rotate_rev with (x:=l) in H9.
-      crush.
+  - crush. unfold backend_labels. simpl.
+    rewrite ostream_labels_dist. simpl. repeat (rewrite <- List.app_assoc). simpl.
+    unfold backend_labels in H9. simpl in H9. apply distinct_rotate_rev in H9.
+    apply distinct_rotate. crush.
   (* S_Add *)
-  - exists x, x0. inv H1; constructor; eauto.
-  - apply distinct_rotate_rev. crush.
-  - unfold backend_labels. simpl.
-    apply distinct_rotate_rev in H8.
+  - crush. apply distinct_rotate_rev in H7. crush.
+  - crush. unfold backend_labels in *. simpl in *.
     rewrite List.app_assoc.
     apply distinct_rotate.
+    apply distinct_rotate_rev in H8.
     crush.
-  (* S_PMap *)
-  - exists x, x0. inv H2; constructor; eauto.
   - crush.
   - crush.
   (* S_PFold *)
-  - unfold backend_labels at 2.
-    simpl.
-    assert (backend_labels b1 ++ l :: (ostream_labels os1' ++ []) ++ ostream_labels os ++ rstream_labels rs = backend_labels b1 ++ l :: (ostream_labels os1' ++ [] ++ ostream_labels os ++ rstream_labels rs)) by crush.
-    rewrite H3 in H10; clear H3.
-    apply distinct_rotate_rev in H10.
-    assert (backend_labels b1 ++ (ostream_labels os1' ++ []) ++ ostream_labels os ++ l :: rstream_labels rs = (backend_labels b1 ++ (ostream_labels os1' ++ []) ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
-    rewrite H3; clear H3.
+  - crush.
+  - crush.
+  (* S_Last *)
+  - crush.
+  - crush.
+    rewrite List.app_assoc.
+    rewrite List.app_assoc.
     apply distinct_rotate.
+    apply distinct_rotate_rev in H10.
+    unfold backend_labels at 2.
     crush.
   (* S_FusePMap *)
-  - exists x, x0. inv H2; constructor; eauto.
-  - assert (<< n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> pmap f ks :: l' ->> pmap f' ks :: os2 >>] ++ b2) by crush.
-    rewrite H3 in H7.
-    rewrite backend_labels_dist in H7.
-    unfold backend_labels at 2 in H7.
-    simpl in H7.
-    rewrite ostream_labels_dist in H7.
-    simpl in H7.
-    assert (<< n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >> :: b2 = [<< n; os1 ++ l ->> pmap (pmap_compose f' f) ks :: os2 >>] ++ b2) by crush.
-    rewrite H4.
-    clear H1; clear H2.
-    rewrite backend_labels_dist.
-    unfold backend_labels at 2.
-    simpl.
-    rewrite ostream_labels_dist.
-    simpl.
-    repeat (rewrite <- List.app_assoc).
-    repeat (rewrite <- List.app_assoc in H7).
-    remember (backend_labels b1 ++ ostream_labels os1) as y.
-    rewrite -> List.app_assoc.
-    rewrite -> List.app_assoc in H7.
-    rewrite <- Heqy in *.
-    simpl in *.
-    rewrite -> cons_app.
-    assert (l' :: rstream_labels rs = [l'] ++ rstream_labels rs) by crush.
-    rewrite H1.
-    clear H1.
-    rewrite -> cons_app in H6.
-    apply distinct_app_comm.
-    simpl.
-    apply distinct_app_comm in H7.
-    simpl in H7.
-    rewrite -> cons_app.
-    assert ([l] ++ (ostream_labels os2 ++ backend_labels b2 ++ ostream_labels os ++ l' :: rstream_labels rs) ++ y = ([l] ++ ostream_labels os2 ++ backend_labels b2 ++ ostream_labels os) ++ (l' :: rstream_labels rs ++ y)) by crush.
-    rewrite H1.
-    clear H1.
+  - crush.
+  - crush.
+    unfold backend_labels at 2; simpl.
+    rewrite ostream_labels_dist; simpl.
+    repeat (rewrite <- List.app_assoc); simpl.
+    unfold backend_labels at 2 in H7; simpl in H7.
+    rewrite ostream_labels_dist in H7; simpl in H7.
+    repeat (rewrite <- List.app_assoc in H7); simpl in H7.
+    replace (backend_labels b1 ++ ostream_labels os1 ++ l :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ l' :: rstream_labels rs)
+            with ((backend_labels b1 ++ ostream_labels os1 ++ l :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os) ++ l' :: rstream_labels rs) by crush.
     apply distinct_rotate.
-    simpl.
-    apply distinct_rotate_front.
+    replace (l' :: (backend_labels b1 ++ ostream_labels os1 ++ l :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os) ++ rstream_labels rs)
+            with ((l' :: (backend_labels b1 ++ ostream_labels os1)) ++ l :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ rstream_labels rs) by crush.
+    apply distinct_rotate.
+    replace (backend_labels b1 ++ ostream_labels os1 ++ l :: l' :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ rstream_labels rs)
+            with ((backend_labels b1 ++ ostream_labels os1 ++ [l]) ++ l' :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ rstream_labels rs) in H7 by crush.
+    apply distinct_rotate_rev in H7.
+    replace (l' :: (backend_labels b1 ++ ostream_labels os1 ++ [l]) ++ ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ rstream_labels rs)
+            with((l' :: (backend_labels b1 ++ ostream_labels os1)) ++ l :: ostream_labels os2 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) b2) ++ ostream_labels os ++ rstream_labels rs) in H7 by crush.
+    apply distinct_rotate_rev in H7.
     crush.
   (* S_Prop *)
-  - exists x, x0. inv H2; constructor; eauto.
-  - rewrite cons_app.
+  - crush.
+  - crush.
+    rewrite cons_app.
     rewrite backend_labels_dist.
     unfold backend_labels at 3.
     simpl.
@@ -2823,36 +2711,15 @@ Proof using.
     apply distinct_app_comm in H7.
     crush.
   (* S_Load *)
-  - exists x, x0. inv H1. apply well_typed_backend_dist' in H11. destruct H11.
-    inv H2.
-    apply_preservation. destruct H3. destruct H2. constructor; eauto.
-    inv H2.
-    apply well_typed_backend_dist; eauto.
+  - crush.
+  - crush.
   (* S_LoadPFold *)
-  - unfold backend_labels at 2 in H8; simpl in H8.
+  - crush.
+  - crush. unfold backend_labels at 2 in H8; simpl in H8.
     rewrite ostream_labels_dist in H8.
     unfold backend_labels at 2; simpl.
     rewrite ostream_labels_dist.
     assumption.
-  - exists x, x0. inv H1. apply well_typed_backend_dist' in H11. destruct H11.
-    inv H2.
-    apply well_typed_ostream_dist' in H11; destruct H11.
-    inv H4.
-    constructor; eauto.
-    apply well_typed_backend_dist; eauto.
-    constructor; eauto.
-    apply well_typed_ostream_dist; eauto.
-    constructor; eauto.
-    inv H15.
-    apply_preservation. destruct H3. destruct H3. inv H3. constructor; eauto.
-Unshelve.
-auto.
-auto.
-auto.
-auto.
-auto.
-auto.
-auto.
 Qed.
 
 (* ****** typing *)
