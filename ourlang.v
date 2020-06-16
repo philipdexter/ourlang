@@ -1317,9 +1317,49 @@ Proof using.
   auto.
 Qed.
 
-Axiom emittability : forall t t' os' rs0,
-  C [] [] rs0 t --> C [] os' rs0 t' ->
-  os' = [].
+Lemma value_no_emit : forall v Gamma T E,
+  has_type Gamma v T E ->
+  value v ->
+  E = false.
+Proof using.
+  induction v; intros; try solve [inv H0]; try solve [inv H; eauto]; eauto.
+  inv H0. inv H. apply IHv1 in H5; auto. apply IHv2 in H8; auto. subst. auto.
+Qed.
+
+Lemma emittability : forall t T t' rs os,
+  has_type empty t T false ->
+  C [] [] rs t --> C [] os rs t' ->
+  os = [].
+Proof using.
+  induction t; intros T t' rs os Hht Hstep; try solve [inv Hht; inv H1]; try solve [exfalso; eapply frontend_no_value'; eauto].
+  - inv Hstep; ssame; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      assert (E3 = false) by (destruct E3; crush).
+      subst.
+      apply IHt1 with (os:=os') (rs:=rs) (t':=t1') in H6; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      assert (E3 = false) by (destruct E3; crush).
+      subst.
+      apply IHt2 with (os:=os') (rs:=rs) (t':=t2') in H8; auto.
+  - inv Hstep; ssame; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      subst.
+      apply IHt1 with (os:=os') (rs:=rs) (t':=k') in H6; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      subst.
+      apply IHt2 with (os:=os') (rs:=rs) (t':=ks') in H8; auto.
+  - inv Hstep; ssame; auto.
+    + inv Hht.
+      apply IHt with (os:=os') (rs:=rs) (t':=t'0) in H1; auto.
+Qed.
 
 Axiom dependent_loadpfold_after : forall l' l c b1 b2 t1 t2 t3 n os os' os0 rs0 term0,
   c = C (b1 ++ <<n; os ++ l' ->> pfold t1 t2 t3 :: os'>> :: b2) os0 rs0 term0 ->
@@ -1359,11 +1399,20 @@ Proof using.
               * {
                 destruct H.
                 - destruct H as [t''[os']].
-                  assert (os'=[]) by (eapply emittability; eauto). subst.
+                  assert (os'=[]).
+                  {
+                  inv WT.
+                  destruct H2 as [T[E]].
+                  inv H2.
+                  apply well_typed_backend_dist' in H9; destruct H9.
+                  inv H3.
+                  inv H9.
+                  inv H8.
+                  eapply emittability with (t:=t1) (T:=Result); eauto.
+                  }
+                  subst.
                   eapply frontend_into_loadpfold with (t1:=t0) (t':=t'') (rs0:=rs0) (b2:=[]) (os:=[]); simpl; eauto.
                   Unshelve.
-                  auto.
-                  auto.
                   right; eauto.
                 - destruct H as [l']. destruct H. subst.
                   destruct all_labels with (c:=C (b1 ++ [<< N k t; l ->> pfold t0 t1 l0 :: os >>]) os0 rs0 term0) (l:=l').
@@ -1965,15 +2014,6 @@ Proof with eauto.
   - eapply T_Emit_OT_PFold; eauto.
   - eapply T_Emit_OT_PMap; eauto.
   - eapply T_Emit_OT_Add; eauto.
-Qed.
-
-Lemma value_no_emit : forall v Gamma T E,
-  has_type Gamma v T E ->
-  value v ->
-  E = false.
-Proof using.
-  induction v; intros; try solve [inv H0]; try solve [inv H; eauto]; eauto.
-  inv H0. inv H. apply IHv1 in H5; auto. apply IHv2 in H8; auto. subst. auto.
 Qed.
 
 Lemma substitution_preserves_typing : forall Gamma x U t v T E1,
