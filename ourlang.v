@@ -17,6 +17,10 @@ Hint Constructors clos_refl_trans_1n.
 Hint Constructors Permutation.Permutation.
 
 Ltac inv H := inversion H; subst; clear H.
+Ltac dtr := repeat (match goal with
+                    | [H : _ /\ _ |- _] => destruct H
+                    | [H : exists _ , _ |- _] => destruct H
+                    end).
 
 Set Implicit Arguments.
 
@@ -43,9 +47,9 @@ Inductive term : Type :=
 | t_ks_nil : term
 | t_ks_cons : term -> term -> term
 | t_downarrow : term -> term
-| t_emit_ot_pfold : label -> term -> term -> term -> term
-| t_emit_ot_pmap : label -> term -> term -> term
-| t_emit_ot_add : label -> term -> term -> term.
+| t_emit_pfold : label -> term -> term -> term -> term
+| t_emit_pmap : label -> term -> term -> term
+| t_emit_add : label -> term -> term -> term.
 Hint Constructors term.
 
 Inductive value : term -> Prop :=
@@ -82,12 +86,12 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_ks_cons (#[x:=s] k) (#[x:=s] ks)
   | t_downarrow t =>
       t_downarrow (#[x:=s] t)
-  | t_emit_ot_pfold l t1 t2 t3 =>
-      t_emit_ot_pfold l (#[x:=s] t1) (#[x:=s] t2) (#[x:=s] t3)
-  | t_emit_ot_pmap l t1 t2 =>
-      t_emit_ot_pmap l (#[x:=s] t1) (#[x:=s] t2)
-  | t_emit_ot_add l t1 t2 =>
-      t_emit_ot_add l (#[x:=s] t1) (#[x:=s] t2)
+  | t_emit_pfold l t1 t2 t3 =>
+      t_emit_pfold l (#[x:=s] t1) (#[x:=s] t2) (#[x:=s] t3)
+  | t_emit_pmap l t1 t2 =>
+      t_emit_pmap l (#[x:=s] t1) (#[x:=s] t2)
+  | t_emit_add l t1 t2 =>
+      t_emit_add l (#[x:=s] t1) (#[x:=s] t2)
   end
 where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
@@ -229,19 +233,19 @@ Inductive has_type : context -> term -> type -> bool -> Prop :=
     has_type Gamma (t_downarrow t) ft E
 | T_Label : forall l Gamma,
     has_type Gamma (t_label l) (Label Result) false
-| T_Emit_OT_PFold : forall l t1 t2 t3 Gamma E1 E2 E3,
+| T_Emit_PFold : forall l t1 t2 t3 Gamma E1 E2 E3,
     has_type Gamma t1 (Arrow Result (Arrow Result Result false) false) E1 ->
     has_type Gamma t2 Result E2 ->
     has_type Gamma t3 Keyset E3 ->
-    has_type Gamma (t_emit_ot_pfold l t1 t2 t3) (Label Result) true
-| T_Emit_OT_PMap : forall l t1 t2 Gamma E1 E2,
+    has_type Gamma (t_emit_pfold l t1 t2 t3) (Label Result) true
+| T_Emit_PMap : forall l t1 t2 Gamma E1 E2,
     has_type Gamma t1 (Arrow Result Result false) E1 ->
     has_type Gamma t2 Keyset E2 ->
-    has_type Gamma (t_emit_ot_pmap l t1 t2) (Label Result) true
-| T_Emit_OT_Add : forall l t1 t2 Gamma E1 E2,
+    has_type Gamma (t_emit_pmap l t1 t2) (Label Result) true
+| T_Emit_Add : forall l t1 t2 Gamma E1 E2,
     has_type Gamma t1 Result E1 ->
     has_type Gamma t2 Result E2 ->
-    has_type Gamma (t_emit_ot_add l t1 t2) (Label Result) true.
+    has_type Gamma (t_emit_add l t1 t2) (Label Result) true.
 Hint Constructors has_type.
 
 Inductive well_typed_operation : operation -> Prop :=
@@ -315,19 +319,19 @@ Reserved Notation "c1 '-->' c2" (at level 40).
 
 Inductive step : config -> config -> Prop :=
 (* frontend *)
-| S_Emit_OT_PFold : forall c b os rs l f t ks,
-    c = C b os rs (t_emit_ot_pfold l f t ks) ->
+| S_Emit_PFold : forall c b os rs l f t ks,
+    c = C b os rs (t_emit_pfold l f t ks) ->
     value f ->
     value t ->
     value ks ->
     c --> C b (os ++ [l ->> pfold f t (keyset_to_keyset ks)]) rs (t_label l)
-| S_Emit_OT_PMap : forall c b os rs l f ks,
-    c = C b os rs (t_emit_ot_pmap l f ks) ->
+| S_Emit_PMap : forall c b os rs l f ks,
+    c = C b os rs (t_emit_pmap l f ks) ->
     value f ->
     value ks ->
     c --> C b (os ++ [l ->> pmap f (keyset_to_keyset ks)]) rs (t_label l)
-| S_Emit_OT_Add : forall c b os rs l k v,
-    c = C b os rs (t_emit_ot_add l (t_result k) (t_result v)) ->
+| S_Emit_Add : forall c b os rs l k v,
+    c = C b os rs (t_emit_add l (t_result k) (t_result v)) ->
     c --> C b (os ++ [l ->> add k (t_result v)]) rs (t_label l)
 | S_Claim : forall c b os rs l v,
     c = C b os rs (t_downarrow (t_label l)) ->
@@ -337,39 +341,39 @@ Inductive step : config -> config -> Prop :=
     c = C b os rs (t_downarrow t) ->
     C [] [] rs t --> C [] os' rs t' ->
     c --> C b (os ++ os') rs (t_downarrow t')
-| S_Ctx_Emit_OT_PFold1 : forall c b os os' rs l t1 t2 t3 t',
-    c = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
+| S_Ctx_Emit_PFold1 : forall c b os os' rs l t1 t2 t3 t',
+    c = C b os rs (t_emit_pfold l t1 t2 t3) ->
     C [] [] rs t1 --> C [] os' rs t' ->
-    c --> C b (os ++ os') rs (t_emit_ot_pfold l t' t2 t3)
-| S_Ctx_Emit_OT_PFold2 : forall c b os os' rs l t1 t2 t3 t',
-    c = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
+    c --> C b (os ++ os') rs (t_emit_pfold l t' t2 t3)
+| S_Ctx_Emit_PFold2 : forall c b os os' rs l t1 t2 t3 t',
+    c = C b os rs (t_emit_pfold l t1 t2 t3) ->
     value t1 ->
     C [] [] rs t2 --> C [] os' rs t' ->
-    c --> C b (os ++ os') rs (t_emit_ot_pfold l t1 t' t3)
-| S_Ctx_Emit_OT_PFold3 : forall c b os os' rs l t1 t2 t3 t',
-    c = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
+    c --> C b (os ++ os') rs (t_emit_pfold l t1 t' t3)
+| S_Ctx_Emit_PFold3 : forall c b os os' rs l t1 t2 t3 t',
+    c = C b os rs (t_emit_pfold l t1 t2 t3) ->
     value t1 ->
     value t2 ->
     C [] [] rs t3 --> C [] os' rs t' ->
-    c --> C b (os ++ os') rs (t_emit_ot_pfold l t1 t2 t')
-| S_Ctx_Emit_OT_PMap1 : forall c b os os' rs l t1 t1' t2,
-    c = C b os rs (t_emit_ot_pmap l t1 t2) ->
+    c --> C b (os ++ os') rs (t_emit_pfold l t1 t2 t')
+| S_Ctx_Emit_PMap1 : forall c b os os' rs l t1 t1' t2,
+    c = C b os rs (t_emit_pmap l t1 t2) ->
     C [] [] rs t1 --> C [] os' rs t1' ->
-    c --> C b (os ++ os') rs (t_emit_ot_pmap l t1' t2)
-| S_Ctx_Emit_OT_PMap2 : forall c b os os' rs l t1 t2 t2',
-    c = C b os rs (t_emit_ot_pmap l t1 t2) ->
+    c --> C b (os ++ os') rs (t_emit_pmap l t1' t2)
+| S_Ctx_Emit_PMap2 : forall c b os os' rs l t1 t2 t2',
+    c = C b os rs (t_emit_pmap l t1 t2) ->
     value t1 ->
     C [] [] rs t2 --> C [] os' rs t2' ->
-    c --> C b (os ++ os') rs (t_emit_ot_pmap l t1 t2')
-| S_Ctx_Emit_OT_Add1 : forall c b os os' rs l t1 t1' t2,
-    c = C b os rs (t_emit_ot_add l t1 t2) ->
+    c --> C b (os ++ os') rs (t_emit_pmap l t1 t2')
+| S_Ctx_Emit_Add1 : forall c b os os' rs l t1 t1' t2,
+    c = C b os rs (t_emit_add l t1 t2) ->
     C [] [] rs t1 --> C [] os' rs t1' ->
-    c --> C b (os ++ os') rs (t_emit_ot_add l t1' t2)
-| S_Ctx_Emit_OT_Add2 : forall c b os os' rs l t1 t2 t2',
-    c = C b os rs (t_emit_ot_add l t1 t2) ->
+    c --> C b (os ++ os') rs (t_emit_add l t1' t2)
+| S_Ctx_Emit_Add2 : forall c b os os' rs l t1 t2 t2',
+    c = C b os rs (t_emit_add l t1 t2) ->
     value t1 ->
     C [] [] rs t2 --> C [] os' rs t2' ->
-    c --> C b (os ++ os') rs (t_emit_ot_add l t1 t2')
+    c --> C b (os ++ os') rs (t_emit_add l t1 t2')
 | S_App : forall c b os rs x T t12 v2,
     c = C b os rs (t_app (t_abs x T t12) v2) ->
     value v2 ->
@@ -893,13 +897,13 @@ Proof using.
   inversion HVal; intros; subst; try inversion HT; subst; auto; inv H; narrow_terms; eauto.
 Qed.
 
-Lemma canonical_forms_emit_ot_pmap : forall t l t1 t2 E1 E2 E3,
-  t = t_emit_ot_pmap l t1 t2 ->
+Lemma canonical_forms_emit_pmap : forall t l t1 t2 E1 E2 E3,
+  t = t_emit_pmap l t1 t2 ->
   has_type empty t1 (Arrow Result Result E1) E2 ->
   has_type empty t2 Keyset E3 ->
   value t1 ->
   value t2 ->
-  exists x u ks, (ks = t_ks_nil \/ (exists k' ks', ks = t_ks_cons k' ks' /\ value k' /\ value ks')) /\ t = t_emit_ot_pmap l (t_abs x Result u) ks.
+  exists x u ks, (ks = t_ks_nil \/ (exists k' ks', ks = t_ks_cons k' ks' /\ value k' /\ value ks')) /\ t = t_emit_pmap l (t_abs x Result u) ks.
 Proof using.
   intros t l t1 t2 Hteq HT1 HT2 HV1 HV2.
   inversion HV1; intros; subst; try inversion HT1; subst; auto; narrow_terms.
@@ -1023,16 +1027,16 @@ Inductive next_reduction : term -> term -> Prop :=
 | nr_ks_cons2 : forall t1 t2 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_ks_cons t1 t2) t2'
 | nr_downarrow : forall t t', not (value t) -> next_reduction t t' -> next_reduction (t_downarrow t) t'
 | nr_downarrow_claim : forall t, value t -> next_reduction (t_downarrow t) (t_downarrow t)
-| nr_emit_ot_pfold1 : forall l t1 t2 t3 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
-| nr_emit_ot_pfold2 : forall l t1 t2 t3 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
-| nr_emit_ot_pfold3 : forall l t1 t2 t3 t', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t' -> next_reduction (t_emit_ot_pfold l t1 t2 t3) t'
-| nr_emit_ot_pfold : forall l t1 t2 t3, value t1 -> value t2 -> value t3 -> next_reduction (t_emit_ot_pfold l t1 t2 t3) (t_emit_ot_pfold l t1 t2 t3)
-| nr_emit_ot_pmap1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_pmap l t1 t2) t'
-| nr_emit_ot_pmap2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_pmap l t1 t2) t'
-| nr_emit_ot_pmap : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_ot_pmap l t1 t2) (t_emit_ot_pmap l t1 t2)
-| nr_emit_ot_add1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_ot_add l t1 t2) t'
-| nr_emit_ot_add2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_ot_add l t1 t2) t'
-| nr_emit_ot_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_ot_add l t1 t2) (t_emit_ot_add l t1 t2).
+| nr_emit_pfold1 : forall l t1 t2 t3 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_pfold l t1 t2 t3) t'
+| nr_emit_pfold2 : forall l t1 t2 t3 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_pfold l t1 t2 t3) t'
+| nr_emit_pfold3 : forall l t1 t2 t3 t', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t' -> next_reduction (t_emit_pfold l t1 t2 t3) t'
+| nr_emit_pfold : forall l t1 t2 t3, value t1 -> value t2 -> value t3 -> next_reduction (t_emit_pfold l t1 t2 t3) (t_emit_pfold l t1 t2 t3)
+| nr_emit_pmap1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_pmap l t1 t2) t'
+| nr_emit_pmap2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_pmap l t1 t2) t'
+| nr_emit_pmap : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_pmap l t1 t2) (t_emit_pmap l t1 t2)
+| nr_emit_add1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_add l t1 t2) t'
+| nr_emit_add2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_add l t1 t2) t'
+| nr_emit_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_add l t1 t2) (t_emit_add l t1 t2).
 Hint Constructors next_reduction.
 
 Lemma result_in_dec : forall rs l, (exists v, In (l ->>> v) rs) \/ (not (exists v, In (l ->>> v) rs)).
@@ -1094,27 +1098,27 @@ Proof using.
     + right. eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold1; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold1; eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold2; eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H4; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PFold3; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold3; eauto.
   - eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PMap1; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PMap1; eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_PMap2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PMap2; eauto.
   - eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_Add1; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_Add1; eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_OT_Add2; eauto.
+    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_Add2; eauto.
   - inversion WT.
     destruct H3 as [T [b]]. find_type; narrow_terms.
     destruct t1; find_type; narrow_terms.
@@ -1536,7 +1540,7 @@ Qed.
 Hint Resolve cht_downarrow.
 
 Lemma cht_pfold1 : forall b os rs l t1 t2 t3 T E,
-  config_has_type (C b os rs (t_emit_ot_pfold l t1 t2 t3)) T E ->
+  config_has_type (C b os rs (t_emit_pfold l t1 t2 t3)) T E ->
   exists T' E', config_has_type (C b os rs t1) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1544,7 +1548,7 @@ Qed.
 Hint Resolve cht_pfold1.
 
 Lemma cht_pfold2 : forall b os rs l t1 t2 t3 T E,
-  config_has_type (C b os rs (t_emit_ot_pfold l t1 t2 t3)) T E ->
+  config_has_type (C b os rs (t_emit_pfold l t1 t2 t3)) T E ->
   exists T' E', config_has_type (C b os rs t2) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1552,7 +1556,7 @@ Qed.
 Hint Resolve cht_pfold2.
 
 Lemma cht_pfold3 : forall b os rs l t1 t2 t3 T E,
-  config_has_type (C b os rs (t_emit_ot_pfold l t1 t2 t3)) T E ->
+  config_has_type (C b os rs (t_emit_pfold l t1 t2 t3)) T E ->
   exists T' E', config_has_type (C b os rs t3) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1560,7 +1564,7 @@ Qed.
 Hint Resolve cht_pfold3.
 
 Lemma cht_pmap1 : forall b os rs l t1 t2 T E,
-  config_has_type (C b os rs (t_emit_ot_pmap l t1 t2)) T E ->
+  config_has_type (C b os rs (t_emit_pmap l t1 t2)) T E ->
   exists T' E', config_has_type (C b os rs t1) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1568,7 +1572,7 @@ Qed.
 Hint Resolve cht_pmap1.
 
 Lemma cht_pmap2 : forall b os rs l t1 t2 T E,
-  config_has_type (C b os rs (t_emit_ot_pmap l t1 t2)) T E ->
+  config_has_type (C b os rs (t_emit_pmap l t1 t2)) T E ->
   exists T' E', config_has_type (C b os rs t2) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1576,7 +1580,7 @@ Qed.
 Hint Resolve cht_pmap2.
 
 Lemma cht_add1 : forall b os rs l t1 t2 T E,
-  config_has_type (C b os rs (t_emit_ot_add l t1 t2)) T E ->
+  config_has_type (C b os rs (t_emit_add l t1 t2)) T E ->
   exists T' E', config_has_type (C b os rs t1) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1584,7 +1588,7 @@ Qed.
 Hint Resolve cht_add1.
 
 Lemma cht_add2 : forall b os rs l t1 t2 T E,
-  config_has_type (C b os rs (t_emit_ot_add l t1 t2)) T E ->
+  config_has_type (C b os rs (t_emit_add l t1 t2)) T E ->
   exists T' E', config_has_type (C b os rs t2) T' E'.
 Proof using.
   intros. inv H. inv H8. eauto.
@@ -1928,27 +1932,27 @@ Inductive appears_free_in : string -> term -> Prop :=
 | afi_downarrow : forall x t,
     appears_free_in x t ->
     appears_free_in x (t_downarrow t)
-| afi_emit_ot_getpay1 : forall x l t1 t2 t3,
+| afi_emit_getpay1 : forall x l t1 t2 t3,
     appears_free_in x t1 ->
-    appears_free_in x (t_emit_ot_pfold l t1 t2 t3)
-| afi_emit_ot_getpay2 : forall x l t1 t2 t3,
+    appears_free_in x (t_emit_pfold l t1 t2 t3)
+| afi_emit_getpay2 : forall x l t1 t2 t3,
     appears_free_in x t2 ->
-    appears_free_in x (t_emit_ot_pfold l t1 t2 t3)
-| afi_emit_ot_getpay3 : forall x l t1 t2 t3,
+    appears_free_in x (t_emit_pfold l t1 t2 t3)
+| afi_emit_getpay3 : forall x l t1 t2 t3,
     appears_free_in x t3 ->
-    appears_free_in x (t_emit_ot_pfold l t1 t2 t3)
-| afi_emit_ot_pmap1 : forall x l t1 t2,
+    appears_free_in x (t_emit_pfold l t1 t2 t3)
+| afi_emit_pmap1 : forall x l t1 t2,
     appears_free_in x t1 ->
-    appears_free_in x (t_emit_ot_pmap l t1 t2)
-| afi_emit_ot_pmap2 : forall x l t1 t2,
+    appears_free_in x (t_emit_pmap l t1 t2)
+| afi_emit_pmap2 : forall x l t1 t2,
     appears_free_in x t2 ->
-    appears_free_in x (t_emit_ot_pmap l t1 t2)
-| afi_emit_ot_add1 : forall x l t1 t2,
+    appears_free_in x (t_emit_pmap l t1 t2)
+| afi_emit_add1 : forall x l t1 t2,
     appears_free_in x t1 ->
-    appears_free_in x (t_emit_ot_add l t1 t2)
-| afi_emit_ot_add2 : forall x l t1 t2,
+    appears_free_in x (t_emit_add l t1 t2)
+| afi_emit_add2 : forall x l t1 t2,
     appears_free_in x t2 ->
-    appears_free_in x (t_emit_ot_add l t1 t2).
+    appears_free_in x (t_emit_add l t1 t2).
 Hint Constructors appears_free_in.
 
 Definition closed (t:term) :=
@@ -2000,9 +2004,9 @@ Proof with eauto.
     rewrite eqb_string_false_iff in Hx0x1. auto.
   - (* T_App *)
     apply T_App with T11...
-  - eapply T_Emit_OT_PFold; eauto.
-  - eapply T_Emit_OT_PMap; eauto.
-  - eapply T_Emit_OT_Add; eauto.
+  - eapply T_Emit_PFold; eauto.
+  - eapply T_Emit_PMap; eauto.
+  - eapply T_Emit_Add; eauto.
 Qed.
 
 Lemma substitution_preserves_typing : forall Gamma x U t v T E1,
@@ -3593,19 +3597,19 @@ Ltac fnv := match goal with
 
 Ltac trouble_makers := try solve [eapply S_Add; eauto]; try solve [eapply S_FusePMap; eauto].
 
-Ltac match_ctx_emit_ot_pfold1 :=
+Ltac match_ctx_emit_pfold1 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pfold ?l ?t1 ?t2 ?t3) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_pfold ?l ?t1 ?t2 ?t3) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pfold l t' t2 t3)); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_pfold l t' t2 t3)); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_pfold1 :
+Lemma lc_ctx_emit_pfold1 :
   forall cx cy cz b os os' rs t1 t2 t3 t' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
-  cy = C b (os ++ os') rs (t_emit_ot_pfold l t' t2 t3) ->
+  cx = C b os rs (t_emit_pfold l t1 t2 t3) ->
+  cy = C b (os ++ os') rs (t_emit_pfold l t' t2 t3) ->
   cx --> cy ->
   cx --> cz ->
   C [] [] rs t1 --> C [] os' rs t' ->
@@ -3614,10 +3618,10 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t3 t' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros tt'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_pfold1.
-  (* S_Emit_OT_Pfold *)
+  inversion cxcz; ssame; try solve match_ctx_emit_pfold1.
+  (* S_Emit_Pfold *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pfold1 *)
+  (* S_Ctx_Emit_Pfold1 *)
   - apply frontend_deterministic with (t'':=t'0) (os':=os'0) in tt'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H2.
@@ -3625,33 +3629,33 @@ Proof using.
     apply distinct_concat in H4.
     crush.
     find_type.
-  (* S_Ctx_Emit_OT_Pfold2 *)
+  (* S_Ctx_Emit_Pfold2 *)
   - apply frontend_no_value' in tt'; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Pfold3 *)
+  (* S_Ctx_Emit_Pfold3 *)
   - apply frontend_no_value' in tt'; exfalso; eauto.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t' t2 t3)); eauto.
+  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t' t2 t3)); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t' t2 t3)); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t' t2 t3)); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_pfold1.
+Hint Resolve lc_ctx_emit_pfold1.
 
-Ltac match_ctx_emit_ot_pfold2 :=
+Ltac match_ctx_emit_pfold2 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pfold ?l ?t1 ?t2 ?t3) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_pfold ?l ?t1 ?t2 ?t3) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pfold l t1 t' t3)); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_pfold l t1 t' t3)); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_pfold2 :
+Lemma lc_ctx_emit_pfold2 :
   forall cx cy cz b os os' rs t1 t2 t3 t' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
-  cy = C b (os ++ os') rs (t_emit_ot_pfold l t1 t' t3) ->
+  cx = C b os rs (t_emit_pfold l t1 t2 t3) ->
+  cy = C b (os ++ os') rs (t_emit_pfold l t1 t' t3) ->
   cx --> cy ->
   cx --> cz ->
   value t1 ->
@@ -3661,12 +3665,12 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t3 t' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV tt'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_pfold2.
-  (* S_Emit_OT_Pfold *)
+  inversion cxcz; ssame; try solve match_ctx_emit_pfold2.
+  (* S_Emit_Pfold *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pfold1 *)
+  (* S_Ctx_Emit_Pfold1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Pfold2 *)
+  (* S_Ctx_Emit_Pfold2 *)
   - apply frontend_deterministic with (t'':=t'0) (os':=os'0) in tt'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H2.
@@ -3675,31 +3679,31 @@ Proof using.
     destruct H3. apply distinct_concat in H6.
     crush.
     find_type.
-  (* S_Ctx_Emit_OT_Pfold3 *)
+  (* S_Ctx_Emit_Pfold3 *)
   - apply frontend_no_value' in tt'; exfalso; eauto.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t1 t' t3)); eauto.
+  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t1 t' t3)); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t1 t' t3)); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t1 t' t3)); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_pfold2.
+Hint Resolve lc_ctx_emit_pfold2.
 
-Ltac match_ctx_emit_ot_pfold3 :=
+Ltac match_ctx_emit_pfold3 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pfold ?l ?t1 ?t2 ?t3) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_pfold ?l ?t1 ?t2 ?t3) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pfold l t1 t2 t')); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_pfold l t1 t2 t')); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_pfold3 :
+Lemma lc_ctx_emit_pfold3 :
   forall cx cy cz b os os' rs t1 t2 t3 t' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pfold l t1 t2 t3) ->
-  cy = C b (os ++ os') rs (t_emit_ot_pfold l t1 t2 t') ->
+  cx = C b os rs (t_emit_pfold l t1 t2 t3) ->
+  cy = C b (os ++ os') rs (t_emit_pfold l t1 t2 t') ->
   cx --> cy ->
   cx --> cz ->
   value t1 ->
@@ -3710,14 +3714,14 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t3 t' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV HV' tt'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_pfold3.
-  (* S_Emit_OT_Pfold *)
+  inversion cxcz; ssame; try solve match_ctx_emit_pfold3.
+  (* S_Emit_Pfold *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pfold1 *)
+  (* S_Ctx_Emit_Pfold1 *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pfold2 *)
+  (* S_Ctx_Emit_Pfold2 *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pfold3 *)
+  (* S_Ctx_Emit_Pfold3 *)
   - apply frontend_deterministic with (t'':=t'0) (os':=os'0) in tt'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H4.
@@ -3727,26 +3731,26 @@ Proof using.
     crush.
     find_type.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t1 t2 t')); eauto.
+  - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t1 t2 t')); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pfold l t1 t2 t')); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t1 t2 t')); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_pfold3.
+Hint Resolve lc_ctx_emit_pfold3.
 
-Ltac match_emit_ot_add :=
+Ltac match_emit_add :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
                                       | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
-Lemma lc_emit_ot_add :
+Lemma lc_emit_add :
   forall cx cy cz b os rs l k v,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_add l (t_result k) (t_result v)) ->
+  cx = C b os rs (t_emit_add l (t_result k) (t_result v)) ->
   cy = C b (os ++ [l ->> add k (t_result v)]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
@@ -3754,12 +3758,12 @@ Lemma lc_emit_ot_add :
 Proof using.
   intros cx cy cz b os rs l incby ks.
   intros WT Heqcx Heqcy cxcy cxcz.
-  inversion cxcz; ssame; try solve match_emit_ot_add.
-  (* S_Emit_OT_Add *)
+  inversion cxcz; ssame; try solve match_emit_add.
+  (* S_Emit_Add *)
   - crush.
-  (* S_Ctx_Emit_OT_Add1 *)
+  (* S_Ctx_Emit_Add1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Add2 *)
+  (* S_Ctx_Emit_Add2 *)
   - apply frontend_no_value' in H1; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ [l ->> add incby (t_result ks)]) rs0 (t_label l)); eauto.
@@ -3769,21 +3773,21 @@ Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_emit_ot_add.
+Hint Resolve lc_emit_add.
 
-Ltac match_ctx_emit_ot_add1 :=
+Ltac match_ctx_emit_add1 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_add ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_add ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_add l t' t2)); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_add l t' t2)); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_add1 :
+Lemma lc_ctx_emit_add1 :
   forall cx cy cz b os os' rs t1 t2 t1' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_add l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_add l t1' t2) ->
+  cx = C b os rs (t_emit_add l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_add l t1' t2) ->
   cx --> cy ->
   cx --> cz ->
   C [] [] rs t1 --> C [] os' rs t1' ->
@@ -3792,10 +3796,10 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t1' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_add1.
-  (* S_Emit_OT_Add *)
+  inversion cxcz; ssame; try solve match_ctx_emit_add1.
+  (* S_Emit_Add *)
   - fnv.
-  (* S_Ctx_Emit_OT_Add1 *)
+  (* S_Ctx_Emit_Add1 *)
   - apply frontend_deterministic with (t'':=t1'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H2.
@@ -3803,31 +3807,31 @@ Proof using.
     apply distinct_concat in H4.
     crush.
     find_type.
-  (* S_Ctx_Emit_OT_Add2 *)
+  (* S_Ctx_Emit_Add2 *)
   - apply frontend_no_value' in t1t1'; exfalso; eauto.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_add l t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_add l t1' t2)); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1'0 ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_add l t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1'0 ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_add l t1' t2)); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_add1.
+Hint Resolve lc_ctx_emit_add1.
 
-Ltac match_ctx_emit_ot_add2 :=
+Ltac match_ctx_emit_add2 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_add ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_add ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_add l t1 t')); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_add l t1 t')); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_add2 :
+Lemma lc_ctx_emit_add2 :
   forall cx cy cz b os os' rs t1 t2 t2' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_add l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_add l t1 t2') ->
+  cx = C b os rs (t_emit_add l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_add l t1 t2') ->
   cx --> cy ->
   cx --> cz ->
   value t1 ->
@@ -3837,12 +3841,12 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t2' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_add2.
-  (* S_Emit_OT_Add *)
+  inversion cxcz; ssame; try solve match_ctx_emit_add2.
+  (* S_Emit_Add *)
   - fnv.
-  (* S_Ctx_Emit_OT_Add1 *)
+  (* S_Ctx_Emit_Add1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Add2 *)
+  (* S_Ctx_Emit_Add2 *)
   - apply frontend_deterministic with (t'':=t2'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H3.
@@ -3851,14 +3855,14 @@ Proof using.
     crush.
     find_type.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_add l t1 t2')); eauto.
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_add l t1 t2')); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_add l t1 t2')); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_add l t1 t2')); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_add2.
+Hint Resolve lc_ctx_emit_add2.
 
 Ltac match_ks1 :=
   match goal with
@@ -3890,7 +3894,7 @@ Proof using.
     apply distinct_concat in H4.
     crush.
     find_type.
-  (* S_Ctx_Emit_OT_GetPay *)
+  (* S_Ctx_Emit_GetPay *)
   - apply frontend_no_value' in t1t1'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_ks_cons t1' t2)); eauto.
@@ -3945,17 +3949,17 @@ auto.
 Qed.
 Hint Resolve lc_ks2.
 
-Ltac match_emit_ot_pmap :=
+Ltac match_emit_pmap :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
                                       | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
-Lemma lc_emit_ot_pmap :
+Lemma lc_emit_pmap :
   forall cx cy cz b os rs l f ks,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pmap l f ks) ->
+  cx = C b os rs (t_emit_pmap l f ks) ->
   cy = C b (os ++ [l ->> pmap f (keyset_to_keyset ks)]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
@@ -3966,12 +3970,12 @@ Proof using.
   intros cx cy cz b os rs l incby ks.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV1 HV2.
-  inversion cxcz; ssame; try solve match_emit_ot_pmap.
-  (* S_Emit_OT_PMap *)
+  inversion cxcz; ssame; try solve match_emit_pmap.
+  (* S_Emit_PMap *)
   - crush.
-  (* S_Ctx_Emit_OT_PMap1 *)
+  (* S_Ctx_Emit_PMap1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_PMap2 *)
+  (* S_Ctx_Emit_PMap2 *)
   - apply frontend_no_value' in H1; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ [l ->> pmap incby (keyset_to_keyset ks)]) rs0 (t_label l)); eauto.
@@ -3981,21 +3985,21 @@ Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_emit_ot_pmap.
+Hint Resolve lc_emit_pmap.
 
-Ltac match_ctx_emit_ot_pmap1 :=
+Ltac match_ctx_emit_pmap1 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pmap ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_pmap ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pmap l t' t2)); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_pmap l t' t2)); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_pmap1 :
+Lemma lc_ctx_emit_pmap1 :
   forall cx cy cz b os os' rs t1 t2 t1' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pmap l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_pmap l t1' t2) ->
+  cx = C b os rs (t_emit_pmap l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_pmap l t1' t2) ->
   cx --> cy ->
   cx --> cz ->
   C [] [] rs t1 --> C [] os' rs t1' ->
@@ -4004,10 +4008,10 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t1' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_pmap1.
-  (* S_Emit_OT_Pmap *)
+  inversion cxcz; ssame; try solve match_ctx_emit_pmap1.
+  (* S_Emit_Pmap *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pmap1 *)
+  (* S_Ctx_Emit_Pmap1 *)
   - apply frontend_deterministic with (t'':=t1'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H2.
@@ -4015,31 +4019,31 @@ Proof using.
     apply distinct_concat in H4.
     crush.
     find_type.
-  (* S_Ctx_Emit_OT_Pmap2 *)
+  (* S_Ctx_Emit_Pmap2 *)
   - apply frontend_no_value' in t1t1'; exfalso; eauto.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pmap l t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pmap l t1' t2)); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1'0 ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pmap l t1' t2)); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1'0 ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_pmap l t1' t2)); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_pmap1.
+Hint Resolve lc_ctx_emit_pmap1.
 
-Ltac match_ctx_emit_ot_pmap2 :=
+Ltac match_ctx_emit_pmap2 :=
   match goal with
-  | [H : _ --> C ?b ?os ?rs (t_emit_ot_pmap ?l ?t1 ?t2) |- _] =>
+  | [H : _ --> C ?b ?os ?rs (t_emit_pmap ?l ?t1 ?t2) |- _] =>
     match goal with
-    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_ot_pmap l t1 t')); simpl; eauto; trouble_makers
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_emit_pmap l t1 t')); simpl; eauto; trouble_makers
     end
   end.
 
-Lemma lc_ctx_emit_ot_pmap2 :
+Lemma lc_ctx_emit_pmap2 :
   forall cx cy cz b os os' rs t1 t2 t2' l,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pmap l t1 t2) ->
-  cy = C b (os ++ os') rs (t_emit_ot_pmap l t1 t2') ->
+  cx = C b os rs (t_emit_pmap l t1 t2) ->
+  cy = C b (os ++ os') rs (t_emit_pmap l t1 t2') ->
   cx --> cy ->
   cx --> cz ->
   value t1 ->
@@ -4049,12 +4053,12 @@ Proof using.
   intros cx cy cz b os os' rs t1 t2 t2' l.
   intros WT Heqcx Heqcy cxcy cxcz.
   intros HV t1t1'.
-  inversion cxcz; ssame; try solve match_ctx_emit_ot_pmap2.
-  (* S_Emit_OT_Pmap *)
+  inversion cxcz; ssame; try solve match_ctx_emit_pmap2.
+  (* S_Emit_Pmap *)
   - fnv.
-  (* S_Ctx_Emit_OT_Pmap1 *)
+  (* S_Ctx_Emit_Pmap1 *)
   - apply frontend_no_value' in H0; exfalso; eauto.
-  (* S_Ctx_Emit_OT_Pmap2 *)
+  (* S_Ctx_Emit_Pmap2 *)
   - apply frontend_deterministic with (t'':=t2'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
     apply distinct_concat in H3.
@@ -4063,26 +4067,26 @@ Proof using.
     crush.
     find_type.
   (* S_Load *)
-  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pmap l t1 t2')); eauto.
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pmap l t1 t2')); eauto.
   (* S_LoadPFold *)
-  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_ot_pmap l t1 t2')); eauto.
+  - gotw (C (b1 ++ << N k t; os1 ++ l0 ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_emit_pmap l t1 t2')); eauto.
 Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_ctx_emit_ot_pmap2.
+Hint Resolve lc_ctx_emit_pmap2.
 
-Ltac match_emit_ot_pfold :=
+Ltac match_emit_pfold :=
   match goal with
   | [H : _ --> C ?b ?os ?rs ?t |- _] => match goal with
                                       | [H': _ --> C ?b' (?os' ++ ?os'') ?rs' ?t' |- _] => gotw (C b (os ++ os'') rs t'); simpl; eauto; trouble_makers
                                       end
   end.
 
-Lemma lc_emit_ot_pfold :
+Lemma lc_emit_pfold :
   forall cx cy cz b os rs l f t ks,
   well_typed cx ->
-  cx = C b os rs (t_emit_ot_pfold l f t ks) ->
+  cx = C b os rs (t_emit_pfold l f t ks) ->
   cy = C b (os ++ [l ->> pfold f t (keyset_to_keyset ks)]) rs (t_label l) ->
   cx --> cy ->
   cx --> cz ->
@@ -4093,8 +4097,8 @@ Lemma lc_emit_ot_pfold :
 Proof using.
   intros cx cy cz b os rs l f t ks WT Heqcx Heqcy cxcy cxcz.
   intros Hvf Hvt Hvks.
-  inversion cxcz; ssame; try solve match_emit_ot_pfold; try solve [fnv].
-  (* S_Emit_OT_PFold *)
+  inversion cxcz; ssame; try solve match_emit_pfold; try solve [fnv].
+  (* S_Emit_PFold *)
   - crush.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ [l ->> pfold f t (keyset_to_keyset ks)]) rs0 (t_label l)); eauto.
@@ -4104,7 +4108,7 @@ Unshelve.
 auto.
 auto.
 Qed.
-Hint Resolve lc_emit_ot_pfold.
+Hint Resolve lc_emit_pfold.
 
 Ltac match_ctx_downarrow :=
   match goal with
@@ -5291,7 +5295,7 @@ Proof using.
   + match_app2.
     * eapply S_Last; crush.
     * eapply S_App2; crush.
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   + match_app2.
     * eapply S_FusePMap; crush.
     * eapply S_App2; crush.
@@ -5437,7 +5441,7 @@ Proof using.
         one_step; eapply S_First; crush.
       + crush.
     }
-  (* S_FuseInc *)
+  (* S_FusePMap *)
   - destruct b1; simpl in *.
     (* b1 = [] *)
     * gotw (C (<< n; os0 ++ l0 ->> pmap (pmap_compose f' f) ks :: os2 ++ [l ->> op] >> :: b2) os' (l' ->>> 0 :: rs0) term1).
