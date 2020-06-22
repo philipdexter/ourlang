@@ -1,4 +1,3 @@
--R "/home/philip/projects/coq/cpdt/src/" "Cpdt"
 -R . project
 ./CpdtTactics.v
 ./Maps.v
