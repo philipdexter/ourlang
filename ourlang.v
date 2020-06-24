@@ -32,6 +32,7 @@ Notation result := nat.
 (* ***********************frontend *)
 
 Inductive type : Type :=
+| Node : type
 | Result : type
 | Keyset : type
 | Label : type -> type
@@ -49,7 +50,8 @@ Inductive term : Type :=
 | t_downarrow : term -> term
 | t_emit_pfold : label -> term -> term -> term -> term
 | t_emit_pmap : label -> term -> term -> term
-| t_emit_add : label -> term -> term -> term.
+| t_emit_add : label -> term -> term -> term
+| t_node : term -> term -> term -> term.
 Hint Constructors term.
 
 Inductive value : term -> Prop :=
@@ -63,7 +65,12 @@ Inductive value : term -> Prop :=
 | v_keyset_cons : forall k ks,
                   value k ->
                   value ks ->
-                  value (t_ks_cons k ks).
+                  value (t_ks_cons k ks)
+| v_node : forall k p es,
+    value k ->
+    value p ->
+    value es ->
+    value (t_node k p es).
 Hint Constructors value.
 Definition noop : term := t_result 0.
 
@@ -92,6 +99,8 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_emit_pmap l (#[x:=s] t1) (#[x:=s] t2)
   | t_emit_add l t1 t2 =>
       t_emit_add l (#[x:=s] t1) (#[x:=s] t2)
+  | t_node k p es =>
+      t_node (#[x:=s]k) (#[x:=s]p) (#[x:=s]es)
   end
 where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
@@ -143,6 +152,7 @@ refine (fun op:operation =>
         | pfold _ (t_result v) _ => fun _ => v
         | _ => _
         end).
+intros. exact 1.
 intros. exact 1.
 intros. exact 1.
 intros. exact 1.
@@ -245,7 +255,12 @@ Inductive has_type : context -> term -> type -> bool -> Prop :=
 | T_Emit_Add : forall l t1 t2 Gamma E1 E2,
     has_type Gamma t1 Result E1 ->
     has_type Gamma t2 Result E2 ->
-    has_type Gamma (t_emit_add l t1 t2) (Label Result) true.
+    has_type Gamma (t_emit_add l t1 t2) (Label Result) true
+| T_Node : forall k p es Gamma E1 E2 E3,
+    has_type Gamma k Result E1 ->
+    has_type Gamma p Result E2 ->
+    has_type Gamma es Keyset E3 ->
+    has_type Gamma (t_node k p es) Node (E1 || E2 || E3).
 Hint Constructors has_type.
 
 Inductive well_typed_operation : operation -> Prop :=
@@ -396,6 +411,21 @@ Inductive step : config -> config -> Prop :=
     value k ->
     C [] [] rs ks --> C [] os' rs ks' ->
     c --> C b (os ++ os') rs (t_ks_cons k ks')
+| S_Ctx_Node1 : forall c b os os' rs k p es k',
+    c = C b os rs (t_node k p es) ->
+    C [] [] rs k --> C [] os' rs k' ->
+    c --> C b (os ++ os') rs (t_node k' p es)
+| S_Ctx_Node2 : forall c b os os' rs k p es p',
+    c = C b os rs (t_node k p es) ->
+    value k ->
+    C [] [] rs p --> C [] os' rs p' ->
+    c --> C b (os ++ os') rs (t_node k p' es)
+| S_Ctx_Node3 : forall c b os os' rs k p es es',
+    c = C b os rs (t_node k p es) ->
+    value k ->
+    value p ->
+    C [] [] rs es --> C [] os' rs es' ->
+    c --> C b (os ++ os') rs (t_node k p es')
 (* to-graph *)
 | S_Empty : forall c os rs os' o l op term H,
     c = C [] os rs term ->
@@ -846,18 +876,11 @@ Qed.
 Ltac ssame := subst; match goal with
                      | [ H : C _ _ _ _ = C _ _ _ _ |- _ ] => inversion H
                      end; subst.
+Ltac ssame' := subst; match goal with
+                      | [ H : C _ _ _ _ = C _ _ _ _ |- _ ] => inv H
+                      end.
 
 Lemma frontend_no_value :
-  forall rs os t t' s ty te,
-  C [] [] rs t --> C [] os rs t' ->
-  ~ (t =  t_abs s ty te).
-Proof using.
-  intros rs os t t' s ty te H.
-  inversion H; ssame; try solve [destruct b1; crush]; try solve [crush].
-Qed.
-Hint Resolve frontend_no_value.
-
-Lemma frontend_no_value' :
   forall rs rs' os t t',
   C [] [] rs t --> C [] os rs' t' ->
   ~ (value t).
@@ -874,8 +897,12 @@ Proof using.
   - inversion H; ssame; eauto; try solve [destruct b1; crush].
     + apply IHt1 in H7. inv H0. eauto.
     + apply IHt2 in H8. inv H0. eauto.
+  - inversion H; ssame; eauto; try solve [destruct b1; crush].
+    + apply IHt1 in H7. inv H0. eauto.
+    + apply IHt2 in H8. inv H0. eauto.
+    + apply IHt3 in H9. inv H0. eauto.
 Qed.
-Hint Resolve frontend_no_value'.
+Hint Resolve frontend_no_value.
 
 Ltac narrow_terms := try (match goal with
                           | [H : value _ |- _] => inv H
@@ -933,21 +960,14 @@ Lemma frontend_agnostic :
   C b os' rs t --> C b (os' ++ os) rs t'.
 Proof using.
   intros os rs t t' H.
-  inversion H; subst; intros; try solve [inv H3; simpl in *; eauto]; try solve [inv H2; simpl in *; eauto]; try solve [destruct b1; crush].
-  - inv H5; simpl in *; eauto.
-  - inv H4; simpl in *; eauto.
-  - inv H3; simpl in *; eauto.
+  inversion H; subst; intros; try solve [inv H3; simpl in *; eauto]; try solve [inv H2; simpl in *; eauto]; try solve [destruct b1; crush]; try solve [ssame; eauto].
+  - ssame; simpl in *; eauto.
+  - ssame; simpl in *; eauto.
+  - ssame; simpl in *; eauto.
     apply S_Claim with (l:=l).
     + crush.
     + assumption.
-  - inv H4. eauto.
-  - inv H5. eauto.
-  - inv H4. eauto.
-  - inv H4. eauto.
-  - inv H3. apply S_App with (T:=T); crush.
-  - inv H4. eauto.
-  - inv H4; eauto.
-  - inv H4; eauto.
+  - ssame. apply S_App with (T:=T); crush.
 Qed.
 
 Inductive dry_backend : backend -> Prop :=
@@ -993,11 +1013,8 @@ Qed.
 Lemma value_dec : forall t, value t \/ ~ value t.
 Proof using.
   induction t; try solve [right; intro; inv H1]; try solve [right; intro; inv H]; try solve [left; eauto].
-  destruct IHt1; destruct IHt2.
-  - eauto.
-  - right; intro; inv H1; eauto.
-  - right; intro; inv H1; eauto.
-  - right; intro; inv H1; eauto.
+  - destruct IHt1; destruct IHt2; try solve [eauto]; right; intro; inv H1; eauto.
+  - destruct IHt1; destruct IHt2; destruct IHt3; try solve [eauto]; right; intro; inv H2; eauto.
 Qed.
 
 Lemma frontend_into_load : forall t t' k os c b1 b2 os0 rs0 term0,
@@ -1036,7 +1053,10 @@ Inductive next_reduction : term -> term -> Prop :=
 | nr_emit_pmap : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_pmap l t1 t2) (t_emit_pmap l t1 t2)
 | nr_emit_add1 : forall l t1 t2 t', not (value t1) -> next_reduction t1 t' -> next_reduction (t_emit_add l t1 t2) t'
 | nr_emit_add2 : forall l t1 t2 t', value t1 -> not (value t2) -> next_reduction t2 t' -> next_reduction (t_emit_add l t1 t2) t'
-| nr_emit_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_add l t1 t2) (t_emit_add l t1 t2).
+| nr_emit_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_add l t1 t2) (t_emit_add l t1 t2)
+| nr_node1 : forall t1 t2 t3 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_node t1 t2 t3) t1'
+| nr_node2 : forall t1 t2 t3 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_node t1 t2 t3) t2'
+| nr_node3 : forall t1 t2 t3 t3', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t3' -> next_reduction (t_node t1 t2 t3) t3'.
 Hint Constructors next_reduction.
 
 Lemma result_in_dec : forall rs l, (exists v, In (l ->>> v) rs) \/ (not (exists v, In (l ->>> v) rs)).
@@ -1074,23 +1094,23 @@ Proof using.
   induction NR; subst.
   - destruct IHNR; [| left; destruct H0 as [t''[os]] | destruct H0 as [l]; destruct H0; right; eauto].
     + easy_wt.
-    + eapply ex_intro; eapply ex_intro; eapply S_App1; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
     + easy_wt.
-    + eapply ex_intro; eapply ex_intro; eapply S_App2; eauto; find_type.
+    + eauto.
   - inversion WT. destruct H3 as [T [b]]. inv H3. inv H13.
     apply canonical_forms_fun in H6. destruct H6. destruct H3. subst.
     left. eapply ex_intro; eapply ex_intro; eapply S_App; eauto. assumption.
   - inversion WT. destruct H1 as [T [b]]. find_type; narrow_terms.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
     + easy_wt.
-    + eapply ex_intro; eapply ex_intro; eapply S_KS1; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
     + easy_wt.
-    + eapply ex_intro; eapply ex_intro; eapply S_KS2; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l HH]; destruct HH; right; eauto].
     + easy_wt.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Downarrow; eauto.
+    + eauto.
   - inversion WT. destruct H2 as [T [b]]. inv H2. inv H12. destruct t; try solve [inv H]; try solve [inv H4].
     rename n into l.
     destruct (result_in_dec rs0 l).
@@ -1098,40 +1118,47 @@ Proof using.
     + right. eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold1; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold2; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H4; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PFold3; eauto.
+    + eauto.
   - eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PMap1; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_PMap2; eauto.
+    + eauto.
   - eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H2; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_Add1; eauto.
+    + eauto.
   - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto].
     + inversion WT; split; try split; crush. inversion H3; eauto; find_type.
-    + eapply ex_intro; eapply ex_intro; eapply S_Ctx_Emit_Add2; eauto.
+    + eauto.
   - inversion WT.
     destruct H3 as [T [b]]. find_type; narrow_terms.
     destruct t1; find_type; narrow_terms.
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto]; try solve [easy_wt]; try solve [eauto].
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto]; try solve [easy_wt]; try solve [eauto].
+  - destruct IHNR as [HH|HH]; [| left; destruct HH as [t''[os]] | destruct HH as [l' HH]; destruct HH; right; eauto]; try solve [easy_wt]; try solve [eauto].
 Qed.
+
+Ltac copy H := let h := fresh "H" in assert (h := H).
+Ltac capply H1 H2 := copy H2; apply H1 in H2.
+Tactic Notation "capply" ident(h1) "in" ident(h2) := capply h1 h2.
 
 Lemma term_to_next_reduction :
   forall t, well_typed (C [] [] [] t) -> not (value t) -> exists t', next_reduction t t'.
 Proof using.
   induction t; intros WT; intros; eauto.
   - destruct (value_dec t1); destruct (value_dec t2); eauto.
-    + remember H1. clear Heqn. apply IHt2 in H1. destruct H1. eauto. easy_wt.
-    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. easy_wt.
-    + remember H0. clear Heqn. apply IHt1 in H0. destruct H0. eauto. easy_wt.
+    + copy H1. apply IHt2 in H1. destruct H1. eauto. easy_wt.
+    + copy H0. apply IHt1 in H0. destruct H0. eauto. easy_wt.
+    + copy H0. apply IHt1 in H0. destruct H0. eauto. easy_wt.
   - crush.
   - crush.
   - crush.
@@ -1169,6 +1196,12 @@ Proof using.
       * eauto.
       * remember H1. clear Heqn0. apply IHt2 in H1. destruct H1. eauto. easy_wt.
     + remember H0. clear Heqn0. apply IHt1 in H0. destruct H0. eauto. easy_wt.
+  - destruct (value_dec t1).
+    + destruct (value_dec t2).
+      * destruct (value_dec t3); [exfalso; apply H; eauto|].
+        capply IHt3 in H2; dtr; eauto; easy_wt.
+      * capply IHt2 in H1; dtr; eauto; easy_wt.
+    + capply IHt1 in H0; dtr; eauto; easy_wt.
 Qed.
 
 Lemma well_typed_backend_dist' : forall b b',
@@ -1307,7 +1340,8 @@ Lemma value_no_emit : forall v Gamma T E,
   E = false.
 Proof using.
   induction v; intros; try solve [inv H0]; try solve [inv H; eauto]; eauto.
-  inv H0. inv H. apply IHv1 in H5; auto. apply IHv2 in H8; auto. subst. auto.
+  - inv H0. inv H. apply IHv1 in H5; auto. apply IHv2 in H8; auto. subst. auto.
+  - inv H0. inv H. apply IHv1 in H7; auto. apply IHv2 in H10; auto. apply IHv3 in H11; auto. subst. auto.
 Qed.
 
 Lemma emittability : forall t T t' rs os,
@@ -1315,7 +1349,7 @@ Lemma emittability : forall t T t' rs os,
   C [] [] rs t --> C [] os rs t' ->
   os = [].
 Proof using.
-  induction t; intros T t' rs os Hht Hstep; try solve [inv Hht; inv H1]; try solve [exfalso; eapply frontend_no_value'; eauto].
+  induction t; intros T t' rs os Hht Hstep; try solve [inv Hht; inv H1]; try solve [exfalso; eapply frontend_no_value; eauto]; try solve [inv Hstep; ssame; auto].
   - inv Hstep; ssame; auto.
     + inv Hht.
       assert (E1 = false) by (destruct E1; crush).
@@ -1343,6 +1377,25 @@ Proof using.
   - inv Hstep; ssame; auto.
     + inv Hht.
       apply IHt with (os:=os') (rs:=rs) (t':=t'0) in H1; auto.
+  - inv Hstep; ssame; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      assert (E3 = false) by (destruct E3; crush).
+      subst.
+      apply IHt1 with (os:=os') (rs:=rs) (t':=k') in H7; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      assert (E3 = false) by (destruct E3; crush).
+      subst.
+      apply IHt2 with (os:=os') (rs:=rs) (t':=p') in H9; auto.
+    + inv Hht.
+      assert (E1 = false) by (destruct E1; crush).
+      assert (E2 = false) by (destruct E2; crush).
+      assert (E3 = false) by (destruct E3; crush).
+      subst.
+      apply IHt3 with (os:=os') (rs:=rs) (t':=es') in H11; auto.
 Qed.
 
 Axiom dependent_loadpfold_after : forall l' l c b1 b2 t1 t2 t3 n os os' os0 rs0 term0,
@@ -1689,7 +1742,39 @@ Proof with eauto.
       * destruct H0. inversion H0; ssame; eauto.
     + destruct H.
       inversion H; ssame; eauto.
+  - destruct IHET1...
+    + inversion WT. split; crush; eauto.
+      inv H1. inv H10.
+      exists Result, E0.
+      constructor. auto. auto. auto.
+    + destruct IHET2...
+      * inversion WT. split; crush; eauto.
+        inv H2. inv H11.
+        exists Result, E4.
+        constructor. auto. auto. auto.
+      * {
+        destruct IHET3...
+        - inversion WT. split; crush; eauto.
+          inv H3. inv H12.
+          exists Keyset, E5.
+          constructor. auto. auto. auto.
+        - right. dtr. inv H1; ssame; eauto.
+        }
+      * right. dtr. inv H0; ssame; eauto.
+    + right. dtr. inv H; ssame; eauto.
 Unshelve.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
 auto.
 auto.
 auto.
@@ -1870,6 +1955,9 @@ Proof using.
               + eapply ex_intro; eauto.
               + eapply ex_intro; eauto.
               + eapply ex_intro; eauto.
+              + eapply ex_intro; eauto.
+              + eapply ex_intro; eauto.
+              + eapply ex_intro; eauto.
               + eapply ex_intro; eapply S_PMap; eauto; crush.
               + eapply ex_intro; eapply S_PFold; eauto; crush.
               + eapply ex_intro; eapply S_Last; eauto; crush.
@@ -1929,6 +2017,15 @@ Inductive appears_free_in : string -> term -> Prop :=
 | afi_ks2 : forall x k ks,
     appears_free_in x ks ->
     appears_free_in x (t_ks_cons k ks)
+| afi_node1 : forall x k p es,
+    appears_free_in x k ->
+    appears_free_in x (t_node k p es)
+| afi_node2 : forall x k p es,
+    appears_free_in x p ->
+    appears_free_in x (t_node k p es)
+| afi_node3 : forall x k p es,
+    appears_free_in x es ->
+    appears_free_in x (t_node k p es)
 | afi_downarrow : forall x t,
     appears_free_in x t ->
     appears_free_in x (t_downarrow t)
@@ -2062,10 +2159,10 @@ Proof using.
   inv H8.
   - inv H2.
   - inversion H0; ssame; try solve [eauto].
-  - exfalso; eapply frontend_no_value'; eauto.
-  - exfalso; eapply frontend_no_value'; eauto.
-  - exfalso; eapply frontend_no_value'; eauto.
-  - exfalso; eapply frontend_no_value'; eauto.
+  - inversion H0; ssame; try solve [eauto].
+  - inversion H0; ssame; try solve [eauto].
+  - inversion H0; ssame; try solve [eauto].
+  - inversion H0; ssame; try solve [eauto].
   - inversion H0; ssame; try solve [eauto].
   - inversion H0; ssame; try solve [eauto].
   - inversion H0; ssame; try solve [eauto].
@@ -2078,6 +2175,7 @@ Proof using.
   - inversion H0; ssame; try solve [eauto].
     + assert (E1 = false) by (eapply value_no_emit; eauto); subst.
       constructor; eauto.
+  - inversion H0; ssame; try solve [eauto].
   - inversion H0; ssame; try solve [eauto].
 Qed.
 Hint Resolve emit_well_typed_top_ostream.
@@ -2351,6 +2449,24 @@ Proof with eauto.
     inv H.
     exists (E1 || x). split; [constructor; eauto|eauto].
     destruct E1; destruct E2; auto; crush.
+  - inv Hht. inv H7.
+    assert (config_has_type (C [] [] rs k) Result E1) by crush.
+    apply IHHstep in H; destruct H; destruct H.
+    inv H.
+    exists (x || E2 || E3). split; [constructor; eauto|eauto].
+    destruct E1; destruct E2; destruct E3; auto; crush.
+  - inv Hht. inv H8.
+    assert (config_has_type (C [] [] rs p) Result E2) by crush.
+    apply IHHstep in H; destruct H; destruct H.
+    inv H.
+    exists (E1 || x || E3). split; [constructor; eauto|eauto].
+    destruct E1; destruct E2; destruct E3; auto; crush.
+  - inv Hht. inv H9.
+    assert (config_has_type (C [] [] rs es) Keyset E3) by crush.
+    apply IHHstep in H; destruct H; destruct H.
+    inv H.
+    exists (E1 || E2 || x). split; [constructor; eauto|eauto].
+    destruct E1; destruct E2; destruct E3; auto; crush.
   - subst. exists E; split; [constructor; eauto|auto]; destruct E; auto.
   - subst. exists E; split; [constructor; eauto|auto]; destruct E; auto; inv Hht; eauto.
   - subst. exists E; split; [constructor; eauto|auto]; destruct E; auto; inv Hht; eauto.
@@ -2457,8 +2573,11 @@ Proof using.
     intro.
     destruct H3.
     inversion H3; inversion H4; try solve [subst; inv H1]; try solve [inv H5]; try solve [subst; match goal with | [H : [] = _ |- _] => inv H end].
-    + subst. inv H0; inv H1; exfalso; eapply frontend_no_value'; eauto.
-    + subst. inv H0; inv H1; exfalso; eapply frontend_no_value'; eauto.
+    + subst. inv H1. exfalso; eapply frontend_no_value; eauto.
+    + subst. inv H1; exfalso; eapply frontend_no_value; eauto.
+    + subst. inv H1. exfalso; eapply frontend_no_value; eauto.
+    + subst. inv H1; exfalso; eapply frontend_no_value; eauto.
+    + subst. inv H1; exfalso; eapply frontend_no_value; eauto.
     + subst. inv H5.
     + subst. inv H5.
     + subst. inv H5.
@@ -2526,7 +2645,7 @@ Proof using.
       destruct H0.
       inv H2.
       simpl in H8.
-      apply frontend_no_value' in H6. apply H6. eauto.
+      apply frontend_no_value in H6. apply H6. eauto.
     + subst. inv H2. inv H4.
       apply dry_backend_dist with (b1:=b2) (b2:=<< N k t0; os1 ++ l ->> pfold f t1 ks :: os' >> :: b3) in H0; eauto.
       destruct H0.
@@ -2774,6 +2893,11 @@ Proof using.
   - inv HT; inv HT'; eauto.
   - inv HT; inv HT'; eauto.
   - inv HT; inv HT'; eauto.
+  - inv HT; inv HT'.
+    eapply IHt1 with (T':=Result) (E':=E0) in H3; eauto.
+    eapply IHt2 with (T':=Result) (E':= E4) in H6; eauto.
+    eapply IHt3 with (T':=Keyset) (E':= E5) in H7; eauto.
+    crush.
 Qed.
 
 (* ****** end typing *)
@@ -3490,7 +3614,7 @@ Ltac fdet :=
   try solve [ssame];
   try solve [repeat (match goal with
                      | [H : C _ _ _ _ = C _ _ _ _ |- _] => inv H
-                     end); try solve [split; crush]; try solve [exfalso; eapply frontend_no_value'; eauto]].
+                     end); try solve [split; crush]; try solve [exfalso; eapply frontend_no_value; eauto]].
 
 Lemma frontend_deterministic :
   forall t rs os t',
@@ -3511,7 +3635,7 @@ Proof using.
         destruct H3.
         inv H3.
         find_type.
-      * inv H4; inv H6. apply frontend_no_value' in H7. exfalso. eauto.
+      * inv H4; inv H6. apply frontend_no_value in H7. exfalso. eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H6. eapply IHt2 in H8; eauto. destruct H8. subst; split; eauto.
         inversion WT.
@@ -3519,7 +3643,7 @@ Proof using.
         destruct H3.
         inv H3.
         find_type.
-  - apply frontend_no_value' in H; exfalso; eauto.
+  - apply frontend_no_value in H; exfalso; eauto.
   - inversion H; subst; fdet.
   - inversion H; subst; fdet.
   - inversion H; subst; fdet.
@@ -3528,7 +3652,7 @@ Proof using.
       * inv H4; inv H5. apply IHt1 with (t'':=k'0) (os':=os'1) in H7. crush.
         easy_wt.
         assumption.
-      * inv H4; inv H6. exfalso; eapply frontend_no_value' in H7; eauto.
+      * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H6. apply IHt2 with (t'':=ks'0) (os':=os'1) in H8. crush.
         easy_wt.
@@ -3548,16 +3672,16 @@ Proof using.
         destruct H7. crush.
         easy_wt.
       * inv H4; inv H6.
-        exfalso; eapply frontend_no_value' in H7; eauto.
+        exfalso; eapply frontend_no_value in H7; eauto.
       * inv H4; inv H8.
-        exfalso; eapply frontend_no_value' in H7; eauto.
+        exfalso; eapply frontend_no_value in H7; eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H6.
         eapply IHt2 with (t':=t') (os:=os'1) in H8; eauto.
         destruct H8. crush.
         easy_wt.
       * inv H5; inv H9.
-        exfalso; eapply frontend_no_value' in H8; eauto.
+        exfalso; eapply frontend_no_value in H8; eauto.
     + inversion H0; subst; fdet.
       * inv H6; inv H10.
         eapply IHt3 with (t':=t') (os:=os'1) in H9; eauto.
@@ -3570,32 +3694,180 @@ Proof using.
         easy_wt.
         assumption.
       * inv H4; inv H6.
-        exfalso; eapply frontend_no_value' in H7; eauto.
+        exfalso; eapply frontend_no_value in H7; eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H6.
         apply IHt2 with (os:=os'0) (t':=t2') in H11; eauto. crush.
         easy_wt.
   - inversion H; subst; fdet.
     + inversion H0; subst; fdet.
-      * inv H3; inv H5. exfalso; eapply frontend_no_value'; eauto.
-      * inv H3; inv H6. exfalso; eapply frontend_no_value'; eauto.
+      * inv H3; inv H5. exfalso; eapply frontend_no_value; eauto.
+      * inv H3; inv H6. exfalso; eapply frontend_no_value; eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H4. apply IHt1 with (os:=os'1) (t':=t1'0) in H7. crush.
         easy_wt.
         assumption.
-      * inv H4; inv H6. exfalso; eapply frontend_no_value' in H7; eauto.
+      * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto.
     + inversion H0; subst; fdet.
       * inv H5; inv H6. apply IHt2 with (os:=os'1) (t':=t2'0) in H8. crush.
+        easy_wt.
+        assumption.
+  - inversion H; subst; fdet.
+    + inversion H0; subst; fdet.
+      * inv H4; inv H5. apply IHt1 with (t'':=k'0) (os':=os'1) in H7. crush.
+        easy_wt.
+        assumption.
+      * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto.
+      * inv H4; inv H8. exfalso; eapply frontend_no_value in H7; eauto.
+    + inversion H0; subst; fdet.
+      * inv H5; inv H6. apply IHt2 with (t'':=p'0) (os':=os'1) in H8. crush.
+        easy_wt.
+        assumption.
+      * ssame'; ssame'. exfalso; eapply frontend_no_value in H8; eauto.
+    + inversion H0; subst; fdet.
+      * ssame'; ssame'. apply IHt3 with (t'':=es'0) (os':=os'1) in H9. crush.
         easy_wt.
         assumption.
 Qed.
 Hint Resolve frontend_deterministic.
 
 Ltac fnv := match goal with
-            | [H : C [] [] ?rs ?t --> C [] ?os ?rs ?t' |- _] => apply frontend_no_value' in H; crush
+            | [H : C [] [] ?rs ?t --> C [] ?os ?rs ?t' |- _] => apply frontend_no_value in H; crush
             end.
 
 Ltac trouble_makers := try solve [eapply S_Add; eauto]; try solve [eapply S_FusePMap; eauto].
+
+Ltac match_node1 :=
+  match goal with
+  | [H : _ --> C ?b ?os ?rs (t_node ?t1 ?t2 ?t3) |- _] =>
+    match goal with
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_node t' t2 t3)); simpl; eauto; trouble_makers
+    end
+  end.
+
+Lemma lc_node1 :
+  forall cx cy cz b os os0 rs t1 t2 t3 t1',
+  well_typed cx ->
+  cx = C b os rs (t_node t1 t2 t3) ->
+  cy = C b (os ++ os0) rs (t_node t1' t2 t3) ->
+  cx --> cy ->
+  cx --> cz ->
+  C [] [] rs t1 --> C [] os0 rs t1' ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b os os' rs t1 t2 t3 t1'.
+  intros WT Heqcx Heqcy cxcy cxcz.
+  intros t1t1'.
+  inversion cxcz; ssame; try solve match_node1.
+  (* S_Ctx_Node1 *)
+  - apply frontend_deterministic with (t'':=k') (os':=os'0) in t1t1'; eauto. crush.
+    easy_wt.
+    apply distinct_concat in H2; dtr.
+    apply distinct_concat in H3; dtr.
+    eauto.
+  (* S_Ctx_Node2 *)
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
+  (* S_Ctx_Node3 *)
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
+  (* S_Load *)
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_node t1' t2 t3)); eauto.
+  (* S_LoadPFold *)
+  - gotw (C (b1 ++ << N k t; os1 ++ l ->> pfold f t1'0 ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_node t1' t2 t3)); eauto.
+Unshelve.
+auto.
+auto.
+Qed.
+Hint Resolve lc_node1.
+
+Ltac match_node2 :=
+  match goal with
+  | [H : _ --> C ?b ?os ?rs (t_node ?t1 ?t2 ?t3) |- _] =>
+    match goal with
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_node t1 t' t3)); simpl; eauto; trouble_makers
+    end
+  end.
+
+Lemma lc_node2 :
+  forall cx cy cz b os os0 rs t1 t2 t3 t2',
+  well_typed cx ->
+  cx = C b os rs (t_node t1 t2 t3) ->
+  cy = C b (os ++ os0) rs (t_node t1 t2' t3) ->
+  cx --> cy ->
+  cx --> cz ->
+  value t1 ->
+  C [] [] rs t2 --> C [] os0 rs t2' ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b os os' rs t1 t2 t3 t2'.
+  intros WT Heqcx Heqcy cxcy cxcz.
+  intros Hval.
+  intros t1t1'.
+  inversion cxcz; ssame; try solve match_node2.
+  (* S_Ctx_Node1 *)
+  - fnv.
+  (* S_Ctx_Node2 *)
+  - apply frontend_deterministic with (t'':=p') (os':=os'0) in t1t1'; eauto. crush.
+    easy_wt.
+    apply distinct_concat in H3; dtr.
+    apply distinct_concat in H4; dtr.
+    eauto.
+  (* S_Ctx_Node3 *)
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
+  (* S_Load *)
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_node t1 t2' t3)); eauto.
+  (* S_LoadPFold *)
+  - gotw (C (b1 ++ << N k t; os1 ++ l ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_node t1 t2' t3)); eauto.
+Unshelve.
+auto.
+auto.
+Qed.
+Hint Resolve lc_node2.
+
+Ltac match_node3 :=
+  match goal with
+  | [H : _ --> C ?b ?os ?rs (t_node ?t1 ?t2 ?t3) |- _] =>
+    match goal with
+    | [H': C [] [] ?rs' ?t --> C [] ?os' ?rs' ?t' |- _] => gotw (C b (os ++ os') rs (t_node t1 t2 t')); simpl; eauto; trouble_makers
+    end
+  end.
+
+Lemma lc_node3 :
+  forall cx cy cz b os os0 rs t1 t2 t3 t3',
+  well_typed cx ->
+  cx = C b os rs (t_node t1 t2 t3) ->
+  cy = C b (os ++ os0) rs (t_node t1 t2 t3') ->
+  cx --> cy ->
+  cx --> cz ->
+  value t1 ->
+  value t2 ->
+  C [] [] rs t3 --> C [] os0 rs t3' ->
+  cy -v cz.
+Proof using.
+  intros cx cy cz b os os' rs t1 t2 t3 t3'.
+  intros WT Heqcx Heqcy cxcy cxcz.
+  intros Hval.
+  intros Hval'.
+  intros t1t1'.
+  inversion cxcz; ssame; try solve match_node3.
+  (* S_Ctx_Node1 *)
+  - fnv.
+  (* S_Ctx_Node2 *)
+  - fnv.
+  (* S_Ctx_Node3 *)
+  - apply frontend_deterministic with (t'':=es') (os':=os'0) in t1t1'; eauto. crush.
+    easy_wt.
+    apply distinct_concat in H4; dtr.
+    apply distinct_concat in H5; dtr.
+    eauto.
+  (* S_Load *)
+  - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_node t1 t2 t3')); eauto.
+  (* S_LoadPFold *)
+  - gotw (C (b1 ++ << N k t; os1 ++ l ->> pfold f t1' ks :: os'0 >> :: b2) (os0 ++ os') rs0 (t_node t1 t2 t3')); eauto.
+Unshelve.
+auto.
+auto.
+Qed.
+Hint Resolve lc_node3.
 
 Ltac match_ctx_emit_pfold1 :=
   match goal with
@@ -3630,9 +3902,9 @@ Proof using.
     crush.
     find_type.
   (* S_Ctx_Emit_Pfold2 *)
-  - apply frontend_no_value' in tt'; exfalso; eauto.
+  - apply frontend_no_value in tt'; exfalso; eauto.
   (* S_Ctx_Emit_Pfold3 *)
-  - apply frontend_no_value' in tt'; exfalso; eauto.
+  - apply frontend_no_value in tt'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t' t2 t3)); eauto.
   (* S_LoadPFold *)
@@ -3669,7 +3941,7 @@ Proof using.
   (* S_Emit_Pfold *)
   - fnv.
   (* S_Ctx_Emit_Pfold1 *)
-  - apply frontend_no_value' in H0; exfalso; eauto.
+  - apply frontend_no_value in H0; exfalso; eauto.
   (* S_Ctx_Emit_Pfold2 *)
   - apply frontend_deterministic with (t'':=t'0) (os':=os'0) in tt'; eauto. crush.
     inv WT. split; try split; eauto; crush.
@@ -3680,7 +3952,7 @@ Proof using.
     crush.
     find_type.
   (* S_Ctx_Emit_Pfold3 *)
-  - apply frontend_no_value' in tt'; exfalso; eauto.
+  - apply frontend_no_value in tt'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'0; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pfold l t1 t' t3)); eauto.
   (* S_LoadPFold *)
@@ -3762,9 +4034,9 @@ Proof using.
   (* S_Emit_Add *)
   - crush.
   (* S_Ctx_Emit_Add1 *)
-  - apply frontend_no_value' in H0; exfalso; eauto.
+  - apply frontend_no_value in H0; exfalso; eauto.
   (* S_Ctx_Emit_Add2 *)
-  - apply frontend_no_value' in H1; exfalso; eauto.
+  - apply frontend_no_value in H1; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ [l ->> add incby (t_result ks)]) rs0 (t_label l)); eauto.
   (* S_LoadPFold *)
@@ -3808,7 +4080,7 @@ Proof using.
     crush.
     find_type.
   (* S_Ctx_Emit_Add2 *)
-  - apply frontend_no_value' in t1t1'; exfalso; eauto.
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_add l t1' t2)); eauto.
   (* S_LoadPFold *)
@@ -3845,7 +4117,7 @@ Proof using.
   (* S_Emit_Add *)
   - fnv.
   (* S_Ctx_Emit_Add1 *)
-  - apply frontend_no_value' in H0; exfalso; eauto.
+  - apply frontend_no_value in H0; exfalso; eauto.
   (* S_Ctx_Emit_Add2 *)
   - apply frontend_deterministic with (t'':=t2'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
@@ -3895,7 +4167,7 @@ Proof using.
     crush.
     find_type.
   (* S_Ctx_Emit_GetPay *)
-  - apply frontend_no_value' in t1t1'; exfalso; eauto.
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_ks_cons t1' t2)); eauto.
   (* S_LoadPFold *)
@@ -3974,9 +4246,9 @@ Proof using.
   (* S_Emit_PMap *)
   - crush.
   (* S_Ctx_Emit_PMap1 *)
-  - apply frontend_no_value' in H0; exfalso; eauto.
+  - apply frontend_no_value in H0; exfalso; eauto.
   (* S_Ctx_Emit_PMap2 *)
-  - apply frontend_no_value' in H1; exfalso; eauto.
+  - apply frontend_no_value in H1; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ [l ->> pmap incby (keyset_to_keyset ks)]) rs0 (t_label l)); eauto.
   (* S_LoadPFold *)
@@ -4020,7 +4292,7 @@ Proof using.
     crush.
     find_type.
   (* S_Ctx_Emit_Pmap2 *)
-  - apply frontend_no_value' in t1t1'; exfalso; eauto.
+  - apply frontend_no_value in t1t1'; exfalso; eauto.
   (* S_Load *)
   - gotw (C (b1 ++ << N k t'; os1 >> :: b2) (os0 ++ os') rs0 (t_emit_pmap l t1' t2)); eauto.
   (* S_LoadPFold *)
@@ -4057,7 +4329,7 @@ Proof using.
   (* S_Emit_Pmap *)
   - fnv.
   (* S_Ctx_Emit_Pmap1 *)
-  - apply frontend_no_value' in H0; exfalso; eauto.
+  - apply frontend_no_value in H0; exfalso; eauto.
   (* S_Ctx_Emit_Pmap2 *)
   - apply frontend_deterministic with (t'':=t2'0) (os':=os'0) in t1t1'; eauto. crush.
     inv WT. split; try split; eauto; crush.
@@ -4806,7 +5078,7 @@ Proof using.
     + destruct os; simpl in *.
       * apply List.app_inj_tail in H2; destruct H2; inv H2.
         exfalso.
-        apply frontend_no_value' in tt'.
+        apply frontend_no_value in tt'.
         {
         destruct H.
         - crush.
