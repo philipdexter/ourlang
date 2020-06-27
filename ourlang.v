@@ -3501,21 +3501,6 @@ auto.
 Qed.
 Hint Resolve frontend_rstream_extension.
 
-(* Lemma frontend_rstream_extension : *)
-(*   forall rs os t t' lr, *)
-(*   C [] [] rs t --> C [] os rs t' -> *)
-(*   C [] [] (lr :: rs) t --> C [] os (lr :: rs) t'. *)
-(* Proof using. *)
-(*   intros rs os t. *)
-(*   generalize dependent rs. *)
-(*   generalize dependent os. *)
-(*   induction t; intros os rs t' lr Hstep; try solve [inversion Hstep; ssame; try solve [destruct b1; crush]; eauto]. *)
-(*   - inversion Hstep; ssame; try solve [destruct b1; crush]. *)
-(*     + eapply S_Claim; eauto. crush. *)
-(*     + eapply S_Ctx_Downarrow; eauto. *)
-(* Qed. *)
-(* Hint Resolve frontend_rstream_extension. *)
-
 Lemma unique_result :
   forall b os rs t l r r',
   well_typed (C b os rs t) ->
@@ -3656,125 +3641,6 @@ Proof using.
   induction xs; crush.
 Qed.
 Hint Resolve list_app_cons_empty.
-
-(* Lemma frontend_deterministic : *)
-(*   forall t rs os t', *)
-(*   well_typed (C [] [] rs t) -> *)
-(*   C [] [] rs t --> C [] os rs t' -> *)
-(*   forall t'' os', *)
-(*   C [] [] rs t --> C [] os' rs t'' -> *)
-(*   t' = t'' /\ os = os'. *)
-(* Proof using. *)
-(*   induction t; intros rs os0 t' WT; intros. *)
-(*   - inv H; try solve [inv H7]; ssame'. inv H7. destruct b1; inv H1. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. eapply IHt1 in H7; eauto. destruct H7. subst; split; eauto. *)
-(*         inversion WT. *)
-(*         split; try split; eauto. *)
-(*         destruct H3. *)
-(*         inv H3. *)
-(*         find_type. *)
-(*       * inv H4; inv H6. apply frontend_no_value in H7. exfalso. eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. eapply IHt2 in H8; eauto. destruct H8. subst; split; eauto. *)
-(*         inversion WT. *)
-(*         split; try split; eauto. *)
-(*         destruct H3. *)
-(*         inv H3. *)
-(*         find_type. *)
-(*   - apply frontend_no_value in H; exfalso; eauto. *)
-(*   - inversion H; subst; fdet. *)
-(*   - inversion H; subst; fdet. *)
-(*   - inversion H; subst; fdet. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. apply IHt1 with (t'':=k'0) (os':=os'1) in H7. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*       * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. apply IHt2 with (t'':=ks'0) (os':=os'1) in H8. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. *)
-(*         eapply unique_result with (r':=v0) in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. apply IHt with (os:=os'0) (t':=t'0) in H9; eauto. destruct H9. subst. split; eauto. *)
-(*         easy_wt. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. *)
-(*         eapply IHt1 with (t':=t') (os:=os'1) in H7; eauto. *)
-(*         destruct H7. crush. *)
-(*         easy_wt. *)
-(*       * inv H4; inv H6. *)
-(*         exfalso; eapply frontend_no_value in H7; eauto. *)
-(*       * inv H4; inv H8. *)
-(*         exfalso; eapply frontend_no_value in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. *)
-(*         eapply IHt2 with (t':=t') (os:=os'1) in H8; eauto. *)
-(*         destruct H8. crush. *)
-(*         easy_wt. *)
-(*       * inv H5; inv H9. *)
-(*         exfalso; eapply frontend_no_value in H8; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H6; inv H10. *)
-(*         eapply IHt3 with (t':=t') (os:=os'1) in H9; eauto. *)
-(*         destruct H9. crush. *)
-(*         easy_wt. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H4. apply IHt1 with (os:=os'1) (t':=t1'0) in H7. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*       * inv H4; inv H6. *)
-(*         exfalso; eapply frontend_no_value in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. *)
-(*         apply IHt2 with (os:=os'0) (t':=t2') in H11; eauto. crush. *)
-(*         easy_wt. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H3; inv H5. exfalso; eapply frontend_no_value; eauto. *)
-(*       * inv H3; inv H6. exfalso; eapply frontend_no_value; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H4. apply IHt1 with (os:=os'1) (t':=t1'0) in H7. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*       * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. apply IHt2 with (os:=os'1) (t':=t2'0) in H8. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*   - inversion H; subst; fdet. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H4; inv H5. apply IHt1 with (t'':=k'0) (os':=os'1) in H7. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*       * inv H4; inv H6. exfalso; eapply frontend_no_value in H7; eauto. *)
-(*       * inv H4; inv H8. exfalso; eapply frontend_no_value in H7; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * inv H5; inv H6. apply IHt2 with (t'':=p'0) (os':=os'1) in H8. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(*       * ssame'; ssame'. exfalso; eapply frontend_no_value in H8; eauto. *)
-(*     + inversion H0; subst; fdet. *)
-(*       * ssame'; ssame'. apply IHt3 with (t'':=es'0) (os':=os'1) in H9. crush. *)
-(*         easy_wt. *)
-(*         assumption. *)
-(* Qed. *)
-(* Hint Resolve frontend_deterministic. *)
-
-(* Ltac fnv := match goal with *)
-(*             | [H : C [] [] ?rs ?t --> C [] ?os ?rs ?t' |- _] => apply frontend_no_value in H; crush *)
-(*             end. *)
 
 Ltac trouble_makers := try solve [eapply S_Add; eauto]; try solve [eapply S_FusePMap; eauto].
 
@@ -4102,9 +3968,107 @@ auto.
 Qed.
 Hint Resolve lc_load.
 
-Axiom pfold_get : forall rs t t' t'',
-  C [] [] rs t' --> C [] [] rs t'' ->
-  t_app t t' = t_app t t''.
+
+Inductive fstar : nat -> term -> rstream -> term -> Prop :=
+| FZero : forall t rs, fstar 0 t rs t
+| FStep : forall t rs t', FRf t rs ==> FRt t' [] -> forall n t'', fstar n t' rs t'' -> fstar (S n) t rs t''.
+Hint Constructors fstar.
+
+Lemma fstar_zero :
+  forall t t' rs,
+  fstar 0 t rs t' ->
+  t = t'.
+Proof using.
+  intros.
+  inversion H; subst; clear H; crush.
+Qed.
+
+Lemma fstar_trans :
+  forall m n t t' t'' rs,
+  fstar m t rs t' ->
+  fstar n t' rs t'' ->
+  fstar (m+n) t rs t''.
+Proof using.
+  induction m; induction n; intros.
+  - crush.
+    apply fstar_zero in H; subst; crush.
+  - simpl.
+    apply fstar_zero in H; subst; crush.
+  - apply fstar_zero in H0; subst.
+    assert (S m = S m + 0) by crush.
+    rewrite H0 in H.
+    crush.
+  - simpl in *.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    eapply FStep.
+    instantiate (1:=t'0).
+    assumption.
+    eapply IHm.
+    instantiate (1:=t').
+    assumption.
+    eapply FStep.
+    instantiate (1:=t'1).
+    assumption.
+    assumption.
+Qed.
+
+Definition non_emitting (t : term) := exists T, has_type empty t T false.
+Hint Unfold non_emitting.
+
+Lemma fstar_app1 : forall m t t' t'' rs,
+  fstar m t rs t' ->
+  fstar m (t_app t t'') rs (t_app t' t'').
+Proof using.
+  induction m; intros.
+  - apply fstar_zero in H; subst; auto.
+  - inv H. econstructor. instantiate (1:=t_app t'0 t''). auto. auto.
+Qed.
+
+Lemma pfold_get : forall rs t t' t'',
+    non_emitting t ->
+    non_emitting t' ->
+    FRf t' rs ==> FRt t'' [] ->
+    (exists n v, fstar n t rs v /\ value v) ->
+    exists n m t''', fstar n (t_app t t') rs t''' /\ fstar m (t_app t t'') rs t'''.
+Proof using.
+  intros; dtr.
+  exists (S x), x, (t_app x0 t'').
+  split.
+  - replace (S x) with (x + 1).
+    eapply fstar_trans.
+    instantiate (1:=t_app x0 t').
+    apply fstar_app1; auto.
+    econstructor. instantiate (1:=t_app x0 t''). auto. auto. crush.
+  - apply fstar_app1. auto.
+Qed.
+
+Lemma fstar_into_star_load : forall n t t' rs b1 k es os b2 os0 t0,
+    fstar n t rs t' ->
+    C (b1 ++ <<N k t es; os>> :: b2) os0 rs t0 -->*[n] C (b1 ++ <<N k t' es; os>> :: b2) os0 rs t0.
+Proof using.
+  induction n; intros.
+  - apply fstar_zero in H; subst. auto.
+  - inv H. econstructor.
+    + instantiate (1:=C (b1 ++ << N k t'0 es; os >> :: b2) os0 rs t0). eauto.
+    + apply IHn; eauto.
+Qed.
+
+Lemma fstar_into_star_loadpfold : forall n t t' n' rs b1 os1 l t1 t3 os2 b2 os0 t0,
+    fstar n t rs t' ->
+    C (b1 ++ <<n'; os1 ++ l ->> pfold t1 t t3 :: os2>> :: b2) os0 rs t0 -->*[n] C (b1 ++ <<n'; os1 ++ l ->> pfold t1 t' t3 :: os2>> :: b2) os0 rs t0.
+Proof using.
+  induction n; intros.
+  - apply fstar_zero in H; subst. auto.
+  - inv H. econstructor.
+    + instantiate (1:=C (b1 ++ << n'; os1 ++ l ->> pfold t1 t'0 t3 :: os2 >> :: b2) os0 rs t0). destruct n'. eauto.
+    + apply IHn; eauto.
+Qed.
+
+(* we are only interested in reductions that terminate *)
+Hypothesis to_value : forall t rs, exists n t', fstar n t rs t' /\ value t'.
+
+Ltac fsame := ssame'; match goal with | [H : ?b ++ _ = ?b ++ _ |- _] => apply List.app_inv_head in H; inv H end.
 
 Lemma lc_pfold :
   forall cx cy cz os rs term k t es t' f l ks os1 b1 b2,
@@ -4257,13 +4221,21 @@ Proof using.
   (* S_LoadPFold *)
   - tsod.
     + destruct os2.
-      * inv Hsame5; simpl in *.
+      * inv Hsame5; simpl in *. fsame.
+        copy H1. rename H into Hfstep. apply pfold_get with (t:=t_app f0 t0) in Hfstep; dtr.
+        apply fstar_into_star_loadpfold with (b1:=b0) (b2:=b3) (n':=N k0 t0 es0) (os1:=[]) (l:=l0) (t1:=f0) (t3:=remove Nat.eq_dec k0 ks0) (os2:=os') (os0:=os0) (rs:=rs0) (t0:=term0) in H.
+        apply fstar_into_star_loadpfold with (b1:=b0) (b2:=b3) (n':=N k0 t0 es0) (os1:=[]) (l:=l0) (t1:=f0) (t3:=remove Nat.eq_dec k0 ks0) (os2:=os') (os0:=os0) (rs:=rs0) (t0:=term0) in H0.
+        rename H into star1.
+        rename H0 into star2.
         got.
-        { instantiate (1:=C (b0 ++ << N k0 t0 es0; l0 ->> pfold f0 (t_app (t_app f0 t0) t1') (remove Nat.eq_dec k0 ks0) :: os' >> :: b3) os0 rs0 term0).
-          inv H. apply List.app_inv_head in H2; inv H2. rewrite pfold_get with (rs:=rs0) (t'':=t1'); eauto.  eapply S_Frontend with (b:=[]) (os:=[]) (os':=[]). eauto. eauto. }
-        { instantiate (1:=C (b0 ++ << N k0 t0 es0; l0 ->> pfold f0 (t_app (t_app f0 t0) t1') (remove Nat.eq_dec k0 ks0) :: os' >> :: b3) os0 rs0 term0).
-          one_step; eapply S_PFold; eauto. }
+        { instantiate (1:=C (b0 ++ << N k0 t0 es0; l0 ->> pfold f0 x1 (remove Nat.eq_dec k0 ks0) :: os' >> :: b3) os0 rs0 term0).
+          eauto. }
+        { instantiate (1:=C (b0 ++ << N k0 t0 es0; l0 ->> pfold f0 x1 (remove Nat.eq_dec k0 ks0) :: os' >> :: b3) os0 rs0 term0).
+          eauto. }
       { crush. }
+      { unfold non_emitting. inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H7. replace false with (false || false || false). eauto. auto. }
+      { unfold non_emitting. inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H7. replace false with (false || false || false). eauto. auto. }
+      { apply to_value. }
       * inv Hsame5.
         got.
         { instantiate (1:=C (b0 ++ << N k0 t0 es0; (l ->> pfold f (t_app (t_app f t0) t') (remove Nat.eq_dec k0 ks) :: os2) ++ l0 ->> pfold f0 t1' ks0 :: os' >> :: b3) os0 rs0 term0).
@@ -4334,8 +4306,6 @@ Ltac ou2 := match goal with
             | [H : ?os1 ++ ?lop :: ?os' ++ ?lop' :: ?os2 = ?os3 ++ ?lop :: ?os4 |- _] =>
               eapply (@op_unique _ _ _ _ _ _ _ os1 (os' ++ lop' :: os2) os3 os4) in H; eauto; crush
             end.
-
-Ltac fsame := ssame'; match goal with | [H : ?b ++ _ = ?b ++ _ |- _] => apply List.app_inv_head in H; inv H end.
 
 Lemma lc_loadpfold :
   forall cx cy cz b1 b2 k t es f t1 t1' l ks os os' term0 os0 rs0,
@@ -4894,8 +4864,108 @@ auto.
 Qed.
 Hint Resolve lc_first.
 
-Axiom pmap_compose_assoc : forall f f' t,
-  t_app f (t_app f' t) = t_app (pmap_compose f f') t.
+Lemma not_afi_subst : forall t x t',
+  not (appears_free_in x t) ->
+  #[x:=t'] t = t.
+Proof using.
+  induction t; auto; intros.
+  - destruct (string_dec x s).
+    + exfalso. apply H. subst. auto.
+    + simpl. assert (eqb_string x s = false) by (apply eqb_string_false_iff; auto). rewrite H0. auto.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    crush.
+  - destruct (string_dec x s).
+    + simpl. subst. assert (eqb_string s s = true) by (subst; apply eqb_string_true_iff; auto). rewrite H0. auto.
+    + assert (#[x:=t'] t0 = t0) by (apply IHt; auto).
+      simpl.
+      assert (eqb_string x s = false) by (apply eqb_string_false_iff; auto). rewrite H1.
+      assert (#[x:=t'] t0 = t0) by (apply IHt; auto).
+      crush.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    crush.
+  - assert (#[x:=t'] t = t) by (apply IHt; auto).
+    crush.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    assert (#[x:=t'] t3 = t3) by (apply IHt3; auto).
+    crush.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    crush.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    crush.
+  - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
+    assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
+    assert (#[x:=t'] t3 = t3) by (apply IHt3; auto).
+    crush.
+Qed.
+
+Lemma fstar_app2 : forall m t t' t'' rs,
+  value t ->
+  fstar m t' rs t'' ->
+  fstar m (t_app t t') rs (t_app t t'').
+Proof using.
+  induction m; intros.
+  - apply fstar_zero in H0; subst; auto.
+  - inv H0. econstructor. instantiate (1:=t_app t t'0). auto. auto.
+Qed.
+
+Lemma rewrite_e_subst : forall t1 t2 x v,
+  #[x:=v] (t_app t1 t2) = t_app (#[x:=v] t1) (#[x:=v] t2).
+Proof using.
+  auto.
+Qed.
+
+Lemma pmap_compose_comm : forall f f' rs t,
+  (exists T1 T2, has_type empty f (Arrow T1 T2 false) false) ->
+  (exists T1 T2, has_type empty f' (Arrow T1 T2 false) false) ->
+  value f ->
+  value f' ->
+  (exists n v, fstar n t rs v /\ value v) ->
+  exists n m t', fstar n (t_app f (t_app f' t)) rs t' /\ fstar m (t_app (pmap_compose f f') t) rs t'.
+Proof using.
+  intros; dtr. unfold pmap_compose. copy H. copy H0. can_fun. can_fun.
+  exists x, (S x), (t_app (t_abs x6 x3 u0) (t_app (t_abs x5 x1 u) x0)).
+  split.
+  - apply fstar_app2; auto. apply fstar_app2; auto.
+  - replace (S x) with (x + 1).
+    eapply fstar_trans.
+    instantiate (1:=t_app (t_abs "x" Result (t_app (t_abs x6 x3 u0) (t_app (t_abs x5 x1 u) (t_var "x")))) x0).
+    apply fstar_app2; auto.
+    eapply FStep. eapply F_App; auto.
+    rewrite rewrite_e_subst.
+    replace (#[ "x" := x0] t_abs x6 x3 u0) with (t_abs x6 x3 u0).
+    rewrite rewrite_e_subst.
+    replace (#[ "x" := x0] t_abs x5 x1 u) with (t_abs x5 x1 u).
+    simpl. auto.
+    assert (~ (appears_free_in "x" (t_abs x5 x1 u))) by (eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H5; eauto.
+    assert (~ (appears_free_in "x" (t_abs x6 x3 u0))) by (eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H5; eauto.
+    crush.
+Qed.
+
+Lemma rstream_cons_swap : forall t rs t' lr lr',
+    FRf t (lr :: lr' :: rs) ==> FRt t' [] ->
+    FRf t (lr' :: lr :: rs) ==> FRt t' [].
+Proof using.
+  induction t; intros; try solve [inv H; constructor; auto].
+  - inv H. constructor. crush. auto.
+Qed.
+Hint Immediate rstream_cons_swap.
+
+Lemma rstream_cons_swap_star : forall n t rs t' lr lr',
+    fstar n t (lr :: lr' :: rs) t' ->
+    fstar n t (lr' :: lr :: rs) t'.
+Proof using.
+  induction n; intros.
+  - apply fstar_zero in H; subst; auto.
+  - inv H.
+    inversion H1; subst; econstructor; eauto.
+Qed.
 
 Lemma lc_pmap :
   forall cx cy cz rs term0 l f ks os1'' b1 b2 k es os v,
@@ -4993,9 +5063,20 @@ Proof using.
         inv H4.
         {
         destruct b3.
-        - got.
-          + instantiate (1:=C (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
-            apply ex_intro with 3.
+        - assert (exists n m t', fstar n (t_app f' (t_app f0 t)) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) t) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t').
+          {
+            apply pmap_compose_comm.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H13. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H7. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H13. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H7. eauto.
+            - apply to_value.
+          }
+          dtr. rename H into star1. rename H0 into star2.
+          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec n ks0))) by eauto.
+          got.
+          + instantiate (1:=C (b0 ++ [<< N n x1 e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
+            apply ex_intro with (3 + x).
             eapply Step.
             instantiate (1:=C (b0 ++ [<< N n (t_app f0 t) e; l' ->> pmap f' ks0 :: os2 >>]) os0 (l0 ->>> _ :: rs0) term1).
             eapply S_Last; crush.
@@ -5004,22 +5085,38 @@ Proof using.
             instantiate (1:=C (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >>]) os0 (l0 ->>> final _ :: rs0) term1).
             eapply S_PMap; crush.
             instantiate (1:=Hnot); crush.
-            apply one_star.
+            eapply Step.
             eapply S_Last with (b:=b0 ++ [<< N n (t_app f' (t_app f0 t)) e; l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >>]); eauto.
             crush.
             apply List.remove_In in H. assumption.
-          + instantiate (1:=C (b0 ++ [<< N n (t_app (pmap_compose f' f0) t) e; os2 >>]) os0 (l0 ->>> final _ :: l' ->>> 0 :: rs0) term1).
-            apply ex_intro with 2.
+            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: l0 ->>> 0 :: rs0) (t0:=term1) in star1.
+            simpl. instantiate (1:=Hnot'). simpl. auto.
+          + instantiate (1:=C (b0 ++ [<< N n x1 e; os2 >>]) os0 (l0 ->>> final _ :: l' ->>> 0 :: rs0) term1).
+            apply ex_intro with (2 + x0).
             eapply Step.
             eapply S_PMap; crush.
-            apply one_star.
+            eapply Step.
             eapply S_Last with (op:=pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)); crush.
             apply List.remove_In in H. assumption.
-          + rewrite pmap_compose_assoc; eauto.
+            apply rstream_cons_swap_star in star2.
+            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l0 ->>> 0 :: l' ->>> 0 :: rs0) (t0:=term1) in star2.
+            simpl. instantiate (1:=Hnot'). simpl. auto.
+          + crush.
         - destruct s.
+          assert (exists n m t', fstar n (t_app f' (t_app f0 t)) (l' ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) t) (l' ->>> 0 :: rs0) t').
+          {
+            apply pmap_compose_comm.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H13. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H7. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H13. eauto.
+            - inv WT; dtr. inv H1. apply well_typed_backend_dist' in H9; dtr. inv H3. inv H13. inv H5. inv H7. eauto.
+            - apply to_value.
+          }
+          dtr. rename H into star1. rename H0 into star2.
+          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec n ks0))) by eauto.
           got.
-          + instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final _ :: rs0) term1).
-            apply ex_intro with 4.
+          + instantiate (1:=C (b0 ++ << N n x1 e; os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> final _ :: rs0) term1).
+            apply ex_intro with (4+x).
             eapply Step.
             instantiate (1:=C (b0 ++ << N n (t_app f0 t) e; l' ->> pmap f' ks0 :: os2 >> :: << n0; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
@@ -5031,21 +5128,22 @@ Proof using.
             instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
             apply List.remove_In in H. assumption.
-            apply one_star.
+            eapply Step.
             assert (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; os2 >>]) ++ << n0; l ++ l0 ->> pmap f0 (remove Nat.eq_dec n ks0) :: l' ->> pmap f' (remove Nat.eq_dec n ks0) :: [] >> :: b3) by crush.
             rewrite H.
-            assert (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; os2 >>]) ++ << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) by crush.
-            rewrite H0.
             eapply S_FusePMap; crush.
-          + instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
-            apply ex_intro with 2.
+            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=<< n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: rs0) (t0:=term1) in star1.
+            simpl. instantiate (1:=Hnot'). simpl. crush.
+          + instantiate (1:=C (b0 ++ << N n x1 e; os2 >> :: << n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+            apply ex_intro with (2 + x0).
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+            instantiate (1:=C (b0 ++ << N n (t_app (pmap_compose f' f0) t) e; l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
             eapply S_PMap; crush.
-            rewrite pmap_compose_assoc; eauto.
-            apply one_star.
-            eapply S_Prop; crush.
-            apply List.remove_In in H. assumption.
+            eapply Step.
+            instantiate (1:=C (b0 ++ << N n (t_app (pmap_compose f' f0) t) e; os2 >> :: << n0; l  ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l' ->>> 0 :: rs0) term1).
+            eapply S_Prop; eauto. crush. apply List.remove_In in H. assumption.
+            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=<< n0; l ++ [l0 ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: rs0) (t0:=term1) in star2.
+            auto.
           + crush.
         }
       * inv H4.
@@ -5090,8 +5188,82 @@ auto.
 Qed.
 Hint Resolve lc_pmap.
 
-Axiom pmap_compose_assoc' : forall f f' f'',
+Axiom functional_extension : forall f f' rs t,
+  (exists n m t', fstar n (t_app f t) rs t' /\ fstar m (t_app f' t) rs t') ->
+  f = f'.
+
+Lemma pmap_compose_assoc_apply : forall f f' f'' rs t,
+  (exists T1 T2, has_type empty f (Arrow T1 T2 false) false) ->
+  (exists T1 T2, has_type empty f' (Arrow T1 T2 false) false) ->
+  (exists T1 T2, has_type empty f'' (Arrow T1 T2 false) false) ->
+  value f ->
+  value f' ->
+  value f'' ->
+  value t ->
+  (exists n v, fstar n (t_app f'' t) rs v /\ value v) ->
+  exists n m t', fstar n (t_app (pmap_compose f (pmap_compose f' f'')) t) rs t' /\ fstar m (t_app (pmap_compose (pmap_compose f f') f'') t) rs t'.
+Proof using.
+  unfold pmap_compose; intros. destruct H6 as [n[v]]. destruct H6.
+  exists (S (S n)), (S (S n)), (t_app f (t_app f' v)).
+  split.
+  - eapply FStep.
+    eapply F_App; auto.
+    rewrite rewrite_e_subst.
+    replace (#["x":=t]f) with f.
+    rewrite rewrite_e_subst.
+    simpl.
+    eapply FStep.
+    eapply F_App2; auto.
+    rewrite rewrite_e_subst.
+    replace (#["x":=t]f') with f'.
+    rewrite rewrite_e_subst.
+    replace (#["x":=t]f'') with f''.
+    simpl.
+    apply fstar_app2; auto.
+    apply fstar_app2; auto.
+    assert (~ (appears_free_in "x" f'')) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+    assert (~ (appears_free_in "x" f')) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+    assert (~ (appears_free_in "x" f)) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+  - eapply FStep.
+    eapply F_App; auto.
+    rewrite rewrite_e_subst.
+    rewrite rewrite_e_subst.
+    replace (#["x":=t]f'') with f''.
+    simpl.
+    replace (S n) with (n + 1).
+    eapply fstar_trans.
+    apply fstar_app2; auto. instantiate (1:=v). auto.
+    eapply FStep. eapply F_App; auto.
+    simpl.
+    replace (#["x":=v]f) with f.
+    replace (#["x":=v]f') with f'.
+    auto.
+    assert (~ (appears_free_in "x" f')) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+    assert (~ (appears_free_in "x" f)) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+    crush.
+    assert (~ (appears_free_in "x" f'')) by (dtr; eapply typable_empty__closed; eauto).
+    eapply not_afi_subst in H8; eauto.
+Qed.
+
+Lemma pmap_compose_assoc : forall f f' f'' (rs:rstream),
+  has_type empty f (Arrow Result Result false) false ->
+  has_type empty f' (Arrow Result Result false) false ->
+  has_type empty f'' (Arrow Result Result false) false ->
+  value f ->
+  value f' ->
+  value f'' ->
   pmap_compose f (pmap_compose f' f'') = pmap_compose (pmap_compose f f') f''.
+Proof using.
+  intros.
+  eapply functional_extension.
+  apply pmap_compose_assoc_apply; eauto.
+  instantiate (1:=rs). apply to_value.
+Qed.
 
 Lemma lc_fusepmap :
   forall cx cy cz n b1 b2 os os1 os2 rs term0 f f' ks l l' H,
@@ -5207,7 +5379,13 @@ Proof using.
                 one_step. eapply S_FusePMap; crush.
               - instantiate (1:=C (b3 ++ << N k' v' e0; x ++ l ->> pmap (pmap_compose (pmap_compose f'0 f0) f) ks0 :: os4 >> :: b4) os0 (l0 ->>> final _ :: l'0 ->>> 0 :: rs0) term1).
                 one_step. eapply S_FusePMap; crush.
-              - rewrite pmap_compose_assoc'; eauto.
+              - rewrite pmap_compose_assoc; eauto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H6. inv H5. inv H15. auto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H6. inv H14. auto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H12. auto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H6. inv H5. inv H15. auto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H6. inv H14. auto.
+                + inv WT; dtr. inv H1. apply well_typed_backend_dist' in H8; dtr. inv H2. apply well_typed_ostream_dist' in H12; dtr. inv H3. inv H12. auto.
               }
             (* No overlap *)
             * simpl in *.
@@ -5239,7 +5417,13 @@ Proof using.
                 one_step. eapply S_FusePMap; crush.
               - instantiate (1:=C (b3 ++ << N k' v' e0; os3 ++ l0 ->> pmap (pmap_compose f' (pmap_compose f'0 f0)) ks0 :: os2 >> :: b4) os0 (l' ->>> final Hnot :: l'0 ->>> 0 :: rs0) term1).
                 one_step. eapply S_FusePMap; crush.
-              - rewrite pmap_compose_assoc'; eauto.
+              - rewrite pmap_compose_assoc; eauto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H7. inv H6. inv H16. auto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H7. inv H15. auto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H13. auto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H7. inv H6. inv H16. auto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H7. inv H15. auto.
+                + inv WT; dtr. inv H2. apply well_typed_backend_dist' in H9; dtr. inv H3. apply well_typed_ostream_dist' in H13; dtr. inv H4. inv H13. auto.
               }
             (* No overlap *)
             * simpl in *.
@@ -5401,6 +5585,8 @@ Qed.
 (* we are only interested in reductions that terminate *)
 Hypothesis to_dry : forall c, exists n c', c -->*[n] c' /\ dry c'.
 
+(* noetharian induction hypothesis,
+   check that it's only used starting from smaller structures relative to the starting configurations *)
 Axiom noe_indo :
   forall cx cy,
   cx == cy ->
