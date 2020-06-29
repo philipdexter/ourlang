@@ -51,7 +51,8 @@ Inductive term : Type :=
 | t_emit_pfold : label -> term -> term -> term -> term
 | t_emit_pmap : label -> term -> term -> term
 | t_emit_add : label -> term -> term -> term
-| t_node : term -> term -> term -> term.
+| t_node : term -> term -> term -> term
+| t_fix : type -> term -> term.
 Hint Constructors term.
 
 Inductive value : term -> Prop :=
@@ -101,6 +102,8 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_emit_add l (#[x:=s] t1) (#[x:=s] t2)
   | t_node k p es =>
       t_node (#[x:=s]k) (#[x:=s]p) (#[x:=s]es)
+  | t_fix T t =>
+      t_fix T (#[x:=s] t)
   end
 where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
@@ -154,6 +157,7 @@ refine (fun op:operation =>
         | pfold _ (t_result v) _ => fun _ => v
         | _ => _
         end).
+intros. exact 1.
 intros. exact 1.
 intros. exact 1.
 intros. exact 1.
@@ -262,7 +266,10 @@ Inductive has_type : context -> term -> type -> bool -> Prop :=
     has_type Gamma k Result E1 ->
     has_type Gamma p Result E2 ->
     has_type Gamma es Keyset E3 ->
-    has_type Gamma (t_node k p es) Node (E1 || E2 || E3).
+    has_type Gamma (t_node k p es) Node (E1 || E2 || E3)
+| T_Fix : forall t T Gamma E2 E3 E4,
+    has_type Gamma t (Arrow (Arrow T T (E2 || E3)) (Arrow T T E2) E3) E4 ->
+    has_type Gamma (t_fix T t) (Arrow T T (E2 || E3)) E4.
 Hint Constructors has_type.
 
 Inductive well_typed_operation : operation -> Prop :=
@@ -412,6 +419,12 @@ Inductive fstep : frff -> frtt -> Prop :=
     value p ->
     FRf es rs ==> FRt es' os ->
     FRf (t_node k p es) rs ==> FRt (t_node k p es') os
+| F_Fix : forall rs t T,
+    value t ->
+    FRf (t_fix T t) rs ==> FRt (t_abs "x" T (t_app (t_app t (t_fix T t)) (t_var "x"))) []
+| F_Ctx_Fix : forall os rs t t' T,
+    FRf t rs ==> FRt t' os ->
+    FRf (t_fix T t) rs ==> FRt (t_fix T t') os
 where "frff ==> frtt" := (fstep frff frtt).
 Hint Constructors fstep.
 
@@ -983,6 +996,7 @@ Proof using.
     + apply IHt1 in H1. intro. inv H. auto.
     + apply IHt2 in H7. intro. inv H. auto.
     + apply IHt3 in H8. intro. inv H. auto.
+  - inv H; intro; inv H.
 Qed.
 
 Ltac narrow_terms := try (match goal with
@@ -1111,7 +1125,9 @@ Inductive next_reduction : term -> term -> Prop :=
 | nr_emit_add : forall l t1 t2, value t1 -> value t2 -> next_reduction (t_emit_add l t1 t2) (t_emit_add l t1 t2)
 | nr_node1 : forall t1 t2 t3 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_node t1 t2 t3) t1'
 | nr_node2 : forall t1 t2 t3 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_node t1 t2 t3) t2'
-| nr_node3 : forall t1 t2 t3 t3', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t3' -> next_reduction (t_node t1 t2 t3) t3'.
+| nr_node3 : forall t1 t2 t3 t3', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t3' -> next_reduction (t_node t1 t2 t3) t3'
+| nr_fix : forall t t' T, not (value t) -> next_reduction t t' -> next_reduction (t_fix T t) t'
+| nr_fix_fix : forall t T, value t -> next_reduction (t_fix T t) (t_fix T t).
 Hint Constructors next_reduction.
 
 Lemma result_in_dec : forall rs l, (exists v, In (l ->>> v) rs) \/ (not (exists v, In (l ->>> v) rs)).
@@ -1190,6 +1206,8 @@ Proof using.
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - eauto.
 Unshelve.
 auto.
 auto.
@@ -1233,7 +1251,7 @@ Proof using.
       {
         inversion WT; dtr. find_type; narrow_terms.
       }
-      destruct H1. eauto.
+      destruct H1. info_eauto.
     + remember H0. clear Heqn. eapply IHt in H0. destruct H0. eauto. easy_wt.
   - destruct (value_dec t1).
     + destruct (value_dec t2).
@@ -1260,6 +1278,9 @@ Proof using.
         ceapply IHt3 in H2; dtr; eauto; easy_wt.
       * ceapply IHt2 in H1; dtr; eauto; easy_wt.
     + ceapply IHt1 in H0; dtr; eauto; easy_wt.
+  - destruct (value_dec t0).
+    + eauto.
+    + ceapply IHt in H0; dtr. eauto. easy_wt.
 Qed.
 
 Lemma well_typed_backend_dist' : forall b b',
@@ -1442,6 +1463,7 @@ Proof using.
       destruct E1; destruct E2; destruct E3; try solve [inv H4]; eauto.
     + eapply IHt3 in H7; eauto.
       destruct E1; destruct E2; destruct E3; try solve [inv H4]; eauto.
+  - inv Hstep; inv HHT; eauto.
 Qed.
 
 Lemma list_not_cons_self : forall {A : Type} (x : A) xs,
@@ -1821,7 +1843,14 @@ Proof with eauto.
         }
       * right. dtr. inv H0; ssame; eauto.
     + right. dtr. inv H; ssame; eauto.
+  - destruct IHET...
+    + inv WT. split; try split; eauto; dtr. inv H1. inv H10. exi; eauto.
+    + right. dtr. inv H; ssame; eauto.
 Unshelve.
+auto.
+auto.
+auto.
+auto.
 auto.
 auto.
 auto.
@@ -2098,7 +2127,10 @@ Inductive appears_free_in : string -> term -> Prop :=
     appears_free_in x (t_emit_add l t1 t2)
 | afi_emit_add2 : forall x l t1 t2,
     appears_free_in x t2 ->
-    appears_free_in x (t_emit_add l t1 t2).
+    appears_free_in x (t_emit_add l t1 t2)
+| afi_fix : forall x t T,
+    appears_free_in x t ->
+    appears_free_in x (t_fix T t).
 Hint Constructors appears_free_in.
 
 Definition closed (t:term) :=
@@ -2138,7 +2170,7 @@ Lemma context_invariance : forall Gamma Gamma' t T E,
 Proof with eauto.
   intros.
   generalize dependent Gamma'.
-  induction H; intros; auto.
+  induction H; intros; auto; try solve [econstructor; eauto].
   - (* T_Var *)
     apply T_Var. rewrite <- H0...
   - (* T_Abs *)
@@ -2148,11 +2180,6 @@ Proof with eauto.
        instantiate is [x|->T11;Gamma] *)
     unfold update. unfold t_update. destruct (eqb_string x x1) eqn: Hx0x1...
     rewrite eqb_string_false_iff in Hx0x1. auto.
-  - (* T_App *)
-    apply T_App with T11...
-  - eapply T_Emit_PFold; eauto.
-  - eapply T_Emit_PMap; eauto.
-  - eapply T_Emit_Add; eauto.
 Qed.
 
 Lemma substitution_preserves_typing : forall Gamma x U t v T E1,
@@ -2224,6 +2251,7 @@ Proof using.
   - inversion H0; try solve [eauto].
     + assert (E1 = false) by (eapply value_no_emit; eauto); subst.
       constructor; eauto.
+  - inversion H0; try solve [eauto].
   - inversion H0; try solve [eauto].
   - inversion H0; try solve [eauto].
 Qed.
@@ -2470,6 +2498,28 @@ Proof using.
       eapply IHt3 in H9; eauto; dtr.
       exists (E1 || E2 || x). split; eauto.
       * destruct E1; destruct E2; destruct E3; crush.
+  - inv H0.
+    + inv H. exists (false || false || false). split; [|destruct E; auto].
+      assert (E = false) by (eapply value_no_emit; eauto); subst.
+      constructor.
+      replace (E2 || E3) with (E2 || E3 || false).
+      econstructor; [instantiate (1:=t)|].
+      * replace E3 with (E3 || false || false).
+        {
+        econstructor; [instantiate (1:=(Arrow t t (E2 || E3)))|].
+        - apply context_invariance with empty; auto.
+          intros; apply typable_empty__closed in H6; unfold closed in H6; exfalso; apply (@H6 x); auto.
+        - replace false with (false || false || false).
+          econstructor; simpl.
+          apply context_invariance with empty. auto.
+          intros. apply typable_empty__closed in H6. unfold closed in H6. exfalso. apply (@H6 x); auto.
+          auto.
+        }
+        destruct E3; auto.
+      * auto.
+      * destruct E2; destruct E3; auto.
+    + inv H. eapply IHt in H6; eauto; dtr.
+      exists x. split; eauto.
 Unshelve.
 auto.
 auto.
@@ -2859,6 +2909,8 @@ Proof using.
     eapply IHt2 with (T':=Result) (E':= E4) in H6; eauto.
     eapply IHt3 with (T':=Keyset) (E':= E5) in H7; eauto.
     crush.
+  - inv HT; inv HT'.
+    eapply IHt with (T':=Arrow (Arrow t t (E0 || E1)) (Arrow t t E0) E1) (E':=E') in H4; crush.
 Qed.
 
 (* ****** end typing *)
@@ -3567,13 +3619,18 @@ Proof using.
   - inv Hstep; inv Hstep'; try solve [fnv].
     + apply IHt1 with (t':=k'0) (os:=os') in H1; dtr; subst; eauto.
       inv H; dtr; split; try split; eauto.
-      inv H; dtr. inv H12. exists Result, E1. eauto.
+      inv H; dtr. inv H12. exi; eauto.
     + apply IHt2 with (t':=p'0) (os:=os') in H7; dtr; subst; eauto.
       inv H; dtr; split; try split; eauto.
-      inv H; dtr. inv H14. exists Result, E2. eauto.
+      inv H; dtr. inv H14. exi; eauto.
     + apply IHt3 with (t':=es'0) (os:=os') in H8; dtr; subst; eauto.
       inv H; dtr; split; try split; eauto.
-      inv H; dtr. inv H16. exists Keyset, E3. eauto.
+      inv H; dtr. inv H16. exi; eauto.
+  - inv Hstep; inv Hstep'; try solve [fnv].
+    + eauto.
+    + apply IHt with (t':=t') (os:=os') in H1; dtr; subst; eauto.
+      inv H; dtr; split; try split; eauto.
+      inv H; dtr. inv H12. exi; eauto.
 Qed.
 
 Lemma list_app_cons_empty : forall {A : Type} (x : A) xs ys,
@@ -4841,6 +4898,8 @@ Proof using.
   - assert (#[x:=t'] t1 = t1) by (apply IHt1; auto).
     assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
     assert (#[x:=t'] t3 = t3) by (apply IHt3; auto).
+    crush.
+  - assert (#[x:=t'] t0 = t0) by (apply IHt; auto).
     crush.
 Qed.
 
