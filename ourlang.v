@@ -985,30 +985,6 @@ Proof using.
     + apply IHt3 in H8. intro. inv H. auto.
 Qed.
 
-(* Lemma s_frontend_no_value : *)
-(*   forall rs rs' os t t', *)
-(*   C [] [] rs t --> C [] os rs' t' -> *)
-(*   ~ (value t). *)
-(* Proof using. *)
-(*   intros rs rs' os t. *)
-(*   generalize dependent rs. *)
-(*   generalize dependent rs'. *)
-(*   generalize dependent os. *)
-(*   induction t; intros; intro; try solve [inversion H0]. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*     + apply IHt1 in H7. inv H0. eauto. *)
-(*     + apply IHt2 in H8. inv H0. eauto. *)
-(*   - inversion H; ssame; eauto; try solve [destruct b1; crush]. *)
-(*     + apply IHt1 in H7. inv H0. eauto. *)
-(*     + apply IHt2 in H8. inv H0. eauto. *)
-(*     + apply IHt3 in H9. inv H0. eauto. *)
-(* Qed. *)
-(* Hint Resolve s_frontend_no_value. *)
-
 Ltac narrow_terms := try (match goal with
                           | [H : value _ |- _] => inv H
                           end);
@@ -1067,23 +1043,6 @@ Proof using.
 Qed.
 Hint Resolve canonical_forms_label.
 
-(* Lemma frontend_agnostic : *)
-(*   forall os rs t t', *)
-(*   C [] [] rs t --> C [] os rs t' -> *)
-(*   forall b os', *)
-(*   C b os' rs t --> C b (os' ++ os) rs t'. *)
-(* Proof using. *)
-(*   intros os rs t t' H. *)
-(*   inversion H; subst; intros; try solve [inv H3; simpl in *; eauto]; try solve [inv H2; simpl in *; eauto]; try solve [destruct b1; crush]; try solve [ssame; eauto]. *)
-(*   - ssame; simpl in *; eauto. *)
-(*   - ssame; simpl in *; eauto. *)
-(*   - ssame; simpl in *; eauto. *)
-(*     apply S_Claim with (l:=l). *)
-(*     + crush. *)
-(*     + assumption. *)
-(*   - ssame. apply S_App with (T:=T); crush. *)
-(* Qed. *)
-
 Inductive dry_backend : backend -> Prop :=
 | dry_backend_empty : dry_backend []
 | dry_backend_cons : forall s b, dry_backend b -> value (get_payload (get_node s)) -> get_ostream s = [] -> dry_backend (s::b).
@@ -1130,24 +1089,6 @@ Proof using.
   - destruct IHt1; destruct IHt2; try solve [eauto]; right; intro; inv H1; eauto.
   - destruct IHt1; destruct IHt2; destruct IHt3; try solve [eauto]; right; intro; inv H2; eauto.
 Qed.
-
-(* Lemma frontend_into_load : forall t t' k os c b1 b2 os0 rs0 term0, *)
-(*   C [] [] rs0 t --> C [] [] rs0 t' -> *)
-(*   well_typed c -> *)
-(*   c = C (b1 ++ <<N k t; os>>:: b2) os0 rs0 term0 -> *)
-(*   exists c', c --> c'. *)
-(* Proof using. *)
-(*   induction t; intros; inversion H; subst; try solve [destruct os1; match goal with | [H : _ = [] |- _] => inv H end]; try solve [match goal with | [H : [] = _ |- _] => inv H end]; try solve [eapply ex_intro; eapply S_Load; eauto]. *)
-(* Qed. *)
-
-(* Lemma frontend_into_loadpfold : forall t t1 t2 t3 t' l k os os' c b1 b2 os0 rs0 term0, *)
-(*   C [] [] rs0 t2 --> C [] [] rs0 t' -> *)
-(*   well_typed c -> *)
-(*   c = C (b1 ++ <<N k t; os ++ l ->> pfold t1 t2 t3 :: os'>>:: b2) os0 rs0 term0 -> *)
-(*   exists c', c --> c'. *)
-(* Proof using. *)
-(*   induction t; intros; inversion H; subst; try solve [destruct os1; match goal with | [H : _ = [] |- _] => inv H end]; try solve [match goal with | [H : [] = _ |- _] => inv H end]; try solve [eapply ex_intro; eapply S_LoadPFold; eauto]. *)
-(* Qed. *)
 
 Inductive next_reduction : term -> term -> Prop :=
 | nr_app1 : forall t1 t2 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_app t1 t2) t1'
