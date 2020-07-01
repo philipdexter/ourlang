@@ -1972,6 +1972,13 @@ Proof using.
   destruct a; simpl. rewrite ll_extract_backend. crush.
 Qed.
 
+Lemma ll_swap_backend : forall b b' ll,
+  backend_types b (backend_types b' ll) = backend_types b' (backend_types b ll).
+Proof using.
+  induction b; intros; auto.
+  destruct a; destruct n; simpl. rewrite IHb. rewrite ll_swap_ostream_backend. auto.
+Qed.
+
 Lemma ht_ostream_extract : forall os ll l T' t T E,
   has_type empty (ostream_types os (l#->T';ll)) t T E ->
   has_type empty (l#->T';ostream_types os ll) t T E.
@@ -3178,6 +3185,14 @@ Proof using.
   rewrite IHos. crush.
 Qed.
 
+Lemma backend_types_app : forall b b' ll,
+  backend_types (b ++ b') ll = backend_types b' (backend_types b ll).
+Proof using.
+  induction b; intros; auto.
+  destruct a; destruct n; simpl.
+  rewrite IHb. rewrite ll_swap_ostream_backend. auto.
+Qed.
+
 Theorem preservation : forall c c' T E,
   config_has_type c T E ->
   c --> c'  ->
@@ -3229,33 +3244,59 @@ Proof with eauto.
     + simpl in *. econstructor. Focus 4.
       * instantiate (1:=backend_types b (l#->Result;rstream_types rs)).
         inv Hht. wtbt'. wttost'.
+        apply wt_backend_extension with (l:=l) (T:=Result) in H0; dtr.
         eapply wt_backend_build; eauto.
-        admit.
       * inv Hht. inv H7. inv H10. wtbt'. eauto.
       * inv Hht. inv H7. inv H10. wtbt'. eauto.
       * inv Hht. inv H7. inv H10. wtbt'. eauto.
     + inv Hht. wtbt. inv H7. simpl in *. rewrite ll_extract_backend. wttost'. eauto.
     + inv Hht. wtbt. wttost. simpl in *. rewrite ll_extract_ostream. eauto.
-  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto.
-    + admit.
-    + admit.
-    + admit.
-  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto.
-    + admit.
-    + admit.
-    + admit.
-  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto.
-    + admit.
-    + admit.
-    + admit.
-  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto.
-    + admit.
-    + admit.
-    + admit.
-  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto.
-    + admit.
-    + admit.
-    + admit.
+  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto; inv Hht.
+    + apply wt_to_wt1 in H6; dtr. simpl in *. wtbt'. eauto.
+    + wtbt. rewrite backend_types_app in *. simpl in *. wttost'. eauto.
+    + wtbt. rewrite backend_types_app in H7. simpl in *. wttost. eauto.
+  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto; inv Hht.
+    + apply wt_to_wt2 in H6; dtr. simpl in *. wtbt'. eauto.
+    + wtbt. rewrite backend_types_app in *. simpl in *. wttost'. eauto.
+    + wtbt. rewrite backend_types_app in H7. simpl in *. wttost. eauto.
+  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto; inv Hht.
+    + apply wt_to_wt3 in H7; dtr. simpl in *. wtbt'. destruct op; eauto.
+    + simpl in *. wtbt. wttost'. rewrite backend_types_app in *. simpl in H0. destruct n1; simpl in *.
+      rewrite ll_extract_backend.
+      rewrite ll_extract_ostream.
+      eauto.
+    + wtbt. wttost. rewrite backend_types_app in H9. simpl in *. destruct n1; simpl in *. auto.
+  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto; inv Hht.
+    + apply wt_to_wt4 in H6; dtr. simpl in *. wtbt'. eauto.
+    + simpl in *. wtbt. wttost'. rewrite backend_types_app in *. simpl in *. destruct n; simpl in *.
+      rewrite ostream_types_app in *; simpl in *. clear H8.
+      rewrite ll_extract_backend.
+      rewrite ll_extract_backend.
+      rewrite ll_extract_ostream.
+      rewrite ll_extract_ostream.
+      eauto.
+    + wtbt. wttost. rewrite backend_types_app in *. simpl in *. destruct n; simpl in *.
+      rewrite ostream_types_app in *; simpl in *; eauto.
+  - subst. exists E. split; eauto; [|destruct E; auto]. econstructor; auto; inv Hht.
+    + wtbdist. inv H1. inv H11. inv H12.
+      copy H6; apply wt_to_ostream_types in H6; subst.
+      copy H15; apply wt_to_ostream_types in H15; subst.
+      copy H; apply wt_to_backend_types in H; subst.
+      copy H7; apply wt_to_top_ostream_types in H7; subst.
+      copy H16; apply wt_to_backend_types in H16; subst.
+      eapply well_typed_backend_dist; eauto.
+      econstructor. Focus 4.
+      * instantiate (1:=ostream_types (os2 ++ [l ->> op]) (backend_types b2 (rstream_types rs))).
+        econstructor; eauto.
+        rewrite ostream_types_app. simpl in *. eapply well_typed_ostream_dist; eauto.
+      * rewrite ostream_types_app. eauto.
+      * rewrite ostream_types_app. eauto.
+      * rewrite ostream_types_app. eauto.
+    + wtbt. wttost'. rewrite backend_types_app in H. simpl in *. destruct n2; simpl in *. destruct n1; simpl in *.
+      rewrite ll_extract_ostream. rewrite ll_extract_backend.
+      rewrite <- ll_swap_ostream_backend. rewrite <- ll_swap_ostream_backend.
+      rewrite ll_swap_backend. eauto.
+    + wtbt. wttost. rewrite backend_types_app in H8. simpl in *. destruct n1; destruct n2; simpl in *. eauto.
   - subst. exists E. split; [|destruct E; eauto].
     inv Hht. apply well_typed_backend_dist' in H6; dtr. inv H0.
     copy H1. rename H1 into Hstep. eapply preservation' with (T:=Result) (E:=false) in H0; dtr; subst; eauto.
@@ -3278,19 +3319,7 @@ Proof with eauto.
       }
       simpl in H5. rewrite ostream_types_app in H5. simpl in H5.
       eauto.
-Unshelve.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-exact nempty.
-Admitted.
+Qed.
 
 Definition normal_form (c : config) : Prop :=
   ~ exists c', c --> c'.
