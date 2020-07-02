@@ -54,6 +54,9 @@ Inductive term : Type :=
 | t_emit_pmap : label -> term -> term -> term
 | t_emit_add : label -> term -> term -> term
 | t_node : term -> term -> term -> term
+| t_na1 : term -> term
+| t_na2 : term -> term
+| t_na3 : term -> term
 | t_fix : type -> term -> term.
 Hint Constructors term.
 
@@ -104,6 +107,12 @@ Fixpoint e_subst (x : string) (s : term) (t : term) : term :=
       t_emit_add l (#[x:=s] t1) (#[x:=s] t2)
   | t_node k p es =>
       t_node (#[x:=s]k) (#[x:=s]p) (#[x:=s]es)
+  | t_na1 t =>
+      t_na1 (#[x:=s]t)
+  | t_na2 t =>
+      t_na2 (#[x:=s]t)
+  | t_na3 t =>
+      t_na3 (#[x:=s]t)
   | t_fix T t =>
       t_fix T (#[x:=s] t)
   end
@@ -159,6 +168,9 @@ refine (fun op:operation =>
         | pfold _ (t_result v) _ => fun _ => v
         | _ => _
         end).
+intros. exact 1.
+intros. exact 1.
+intros. exact 1.
 intros. exact 1.
 intros. exact 1.
 intros. exact 1.
@@ -274,6 +286,15 @@ Inductive has_type : context -> lcontext -> term -> type -> bool -> Prop :=
     has_type Gamma ll p Result E2 ->
     has_type Gamma ll es Keyset E3 ->
     has_type Gamma ll (t_node k p es) Node (E1 || E2 || E3)
+| T_Na1 : forall t Gamma ll E,
+    has_type Gamma ll t Node E ->
+    has_type Gamma ll (t_na1 t) Result E
+| T_Na2 : forall t Gamma ll E,
+    has_type Gamma ll t Node E ->
+    has_type Gamma ll (t_na2 t) Result E
+| T_Na3 : forall t Gamma ll E,
+    has_type Gamma ll t Node E ->
+    has_type Gamma ll (t_na3 t) Keyset E
 | T_Fix : forall t T Gamma ll E2 E3 E4,
     has_type Gamma ll t (Arrow (Arrow T T (E2 || E3)) (Arrow T T E2) E3) E4 ->
     has_type Gamma ll (t_fix T t) (Arrow T T (E2 || E3)) E4.
@@ -496,6 +517,30 @@ Inductive fstep : frff -> frtt -> Prop :=
 | F_Fix : forall rs t T,
     value t ->
     FRf (t_fix T t) rs ==> FRt (t_abs "x" T (t_app (t_app t (t_fix T t)) (t_var "x"))) []
+| F_Ctx_Na1 : forall os rs t t',
+    FRf t rs ==> FRt t' os ->
+    FRf (t_na1 t) rs ==> FRt (t_na1 t') os
+| F_Ctx_Na2 : forall os rs t t',
+    FRf t rs ==> FRt t' os ->
+    FRf (t_na2 t) rs ==> FRt (t_na2 t') os
+| F_Ctx_Na3 : forall os rs t t',
+    FRf t rs ==> FRt t' os ->
+    FRf (t_na3 t) rs ==> FRt (t_na3 t') os
+| F_Na1 : forall rs t1 t2 t3,
+    value t1 ->
+    value t2 ->
+    value t3 ->
+    FRf (t_na1 (t_node t1 t2 t3)) rs ==> FRt t1 []
+| F_Na2 : forall rs t1 t2 t3,
+    value t1 ->
+    value t2 ->
+    value t3 ->
+    FRf (t_na2 (t_node t1 t2 t3)) rs ==> FRt t2 []
+| F_Na3 : forall rs t1 t2 t3,
+    value t1 ->
+    value t2 ->
+    value t3 ->
+    FRf (t_na3 (t_node t1 t2 t3)) rs ==> FRt t3 []
 | F_Ctx_Fix : forall os rs t t' T,
     FRf t rs ==> FRt t' os ->
     FRf (t_fix T t) rs ==> FRt (t_fix T t') os
@@ -1072,6 +1117,15 @@ Inductive lappears_free_in : label -> term -> Prop :=
 | lafi_emit_add2 : forall x l t1 t2,
     lappears_free_in x t2 ->
     lappears_free_in x (t_emit_add l t1 t2)
+| lafi_na1 : forall x t,
+    lappears_free_in x t ->
+    lappears_free_in x (t_na1 t)
+| lafi_na2 : forall x t,
+    lappears_free_in x t ->
+    lappears_free_in x (t_na2 t)
+| lafi_na3 : forall x t,
+    lappears_free_in x t ->
+    lappears_free_in x (t_na3 t)
 | lafi_fix : forall x t T,
     lappears_free_in x t ->
     lappears_free_in x (t_fix T t).
@@ -1280,6 +1334,9 @@ Proof using.
     + apply IHt2 in H7. intro. inv H. auto.
     + apply IHt3 in H8. intro. inv H. auto.
   - inv H; intro; inv H.
+  - inv H; intro; inv H.
+  - inv H; intro; inv H.
+  - inv H; intro; inv H.
 Qed.
 
 Ltac narrow_terms := try (match goal with
@@ -1391,6 +1448,12 @@ Inductive next_reduction : term -> term -> Prop :=
 | nr_node1 : forall t1 t2 t3 t1', not (value t1) -> next_reduction t1 t1' -> next_reduction (t_node t1 t2 t3) t1'
 | nr_node2 : forall t1 t2 t3 t2', value t1 -> not (value t2) -> next_reduction t2 t2' -> next_reduction (t_node t1 t2 t3) t2'
 | nr_node3 : forall t1 t2 t3 t3', value t1 -> value t2 -> not (value t3) -> next_reduction t3 t3' -> next_reduction (t_node t1 t2 t3) t3'
+| nr_na1 : forall t t', not (value t) -> next_reduction t t' -> next_reduction (t_na1 t) t'
+| nr_na2 : forall t t', not (value t) -> next_reduction t t' -> next_reduction (t_na2 t) t'
+| nr_na3 : forall t t', not (value t) -> next_reduction t t' -> next_reduction (t_na3 t) t'
+| nr_na1_get : forall t, value t -> next_reduction (t_na1 t) (t_na1 t)
+| nr_na2_get : forall t, value t -> next_reduction (t_na2 t) (t_na2 t)
+| nr_na3_get : forall t, value t -> next_reduction (t_na3 t) (t_na3 t)
 | nr_fix : forall t t' T, not (value t) -> next_reduction t t' -> next_reduction (t_fix T t) t'
 | nr_fix_fix : forall t T, value t -> next_reduction (t_fix T t) (t_fix T t).
 Hint Constructors next_reduction.
@@ -1452,6 +1515,12 @@ Proof using.
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
+  - inv WT; dtr. inv H2. inv H11. destruct t; narrow_terms. eauto.
+  - inv WT; dtr. inv H2. inv H11. destruct t; narrow_terms. eauto.
+  - inv WT; dtr. inv H2. inv H11. destruct t; narrow_terms; eauto.
   - destruct IHNR; dtr; [try solve [easy_wt]| |]; try solve [eauto].
   - eauto.
 Unshelve.
@@ -1518,6 +1587,15 @@ Proof using.
         ceapply IHt3 in H2; dtr; eauto; easy_wt.
       * ceapply IHt2 in H1; dtr; eauto; easy_wt.
     + ceapply IHt1 in H0; dtr; eauto; easy_wt.
+  - destruct (value_dec t).
+    + eauto.
+    + ceapply IHt in H0; dtr. eauto. easy_wt.
+  - destruct (value_dec t).
+    + eauto.
+    + ceapply IHt in H0; dtr. eauto. easy_wt.
+  - destruct (value_dec t).
+    + eauto.
+    + ceapply IHt in H0; dtr. eauto. easy_wt.
   - destruct (value_dec t0).
     + eauto.
     + ceapply IHt in H0; dtr. eauto. easy_wt.
@@ -1725,6 +1803,9 @@ Proof using.
       destruct E1; destruct E2; destruct E3; try solve [inv H5]; eauto.
     + eapply IHt3 in H7; eauto.
       destruct E1; destruct E2; destruct E3; try solve [inv H5]; eauto.
+  - inv Hstep; inv HHT; eauto.
+  - inv Hstep; inv HHT; eauto.
+  - inv Hstep; inv HHT; eauto.
   - inv Hstep; inv HHT; eauto.
 Qed.
 
@@ -2228,6 +2309,106 @@ Proof using.
       wtost.
       wttost.
       auto.
+  - eapply term_to_next_reduction in HNV; subst; dtr.
+    + copy H0. rename H1 into HNR. eapply next_reduction_to_reduction' with (rs:=rs0) in H0.
+      * {
+        destruct H0; dtr.
+        - assert (x1 = []) by (eapply emittability'; eauto); subst.
+          exi. eapply S_Load; eauto.
+        - subst.
+          edestruct dependent_load_after with (c:=C (b1 ++ << N k (t_na1 t) es; os >> :: b2) os0 rs0 term0) (l:=x0); eauto; dtr.
+          + exfalso; eauto.
+          + apply List.in_split in H2; dtr.
+            subst.
+            replace ((b1 ++ << N k (t_na1 t) es; os >> :: x2 ++ << x; x5 ++ x0 ->> x1 :: x6 >> :: x3))
+                    with (((b1 ++ << N k (t_na1 t) es; os >> :: x2) ++ << x; x5 ++ x0 ->> x1 :: x6 >> :: x3)) by crush.
+            destruct x. destruct x5; simpl.
+            * eapply op_reduction_exists; eauto. crush.
+            * destruct l. eapply op_reduction_exists; eauto. crush.
+        }
+      * instantiate (1:=os0).
+        instantiate (1:=(b1 ++ << N k (t_na1 t) es; os >> :: b2)).
+        inv WT; dtr.
+        split; try split; eauto.
+        inv H3.
+        exists Result, false.
+        econstructor.
+        eauto.
+        eauto.
+        wtbdist.
+        inv H4.
+        wtbt.
+        wtbt.
+        wtost.
+        wttost.
+        auto.
+    + instantiate (1:=rs0).
+      instantiate (1:=os0).
+      instantiate (1:=(b1 ++ << N k (t_na1 t) es; os >> :: b2)).
+      inv WT; dtr.
+      split; try split; eauto.
+      inv H2.
+      exists Result, false.
+      econstructor.
+      eauto.
+      eauto.
+      wtbdist.
+      inv H3.
+      wtbt.
+      wtbt.
+      wtost.
+      wttost.
+      auto.
+  - eapply term_to_next_reduction in HNV; subst; dtr.
+    + copy H0. rename H1 into HNR. eapply next_reduction_to_reduction' with (rs:=rs0) in H0.
+      * {
+        destruct H0; dtr.
+        - assert (x1 = []) by (eapply emittability'; eauto); subst.
+          exi. eapply S_Load; eauto.
+        - subst.
+          edestruct dependent_load_after with (c:=C (b1 ++ << N k (t_na2 t) es; os >> :: b2) os0 rs0 term0) (l:=x0); eauto; dtr.
+          + exfalso; eauto.
+          + apply List.in_split in H2; dtr.
+            subst.
+            replace ((b1 ++ << N k (t_na2 t) es; os >> :: x2 ++ << x; x5 ++ x0 ->> x1 :: x6 >> :: x3))
+                    with (((b1 ++ << N k (t_na2 t) es; os >> :: x2) ++ << x; x5 ++ x0 ->> x1 :: x6 >> :: x3)) by crush.
+            destruct x. destruct x5; simpl.
+            * eapply op_reduction_exists; eauto. crush.
+            * destruct l. eapply op_reduction_exists; eauto. crush.
+        }
+      * instantiate (1:=os0).
+        instantiate (1:=(b1 ++ << N k (t_na2 t) es; os >> :: b2)).
+        inv WT; dtr.
+        split; try split; eauto.
+        inv H3.
+        exists Result, false.
+        econstructor.
+        eauto.
+        eauto.
+        wtbdist.
+        inv H4.
+        wtbt.
+        wtbt.
+        wtost.
+        wttost.
+        auto.
+    + instantiate (1:=rs0).
+      instantiate (1:=os0).
+      instantiate (1:=(b1 ++ << N k (t_na2 t) es; os >> :: b2)).
+      inv WT; dtr.
+      split; try split; eauto.
+      inv H2.
+      exists Result, false.
+      econstructor.
+      eauto.
+      eauto.
+      wtbdist.
+      inv H3.
+      wtbt.
+      wtbt.
+      wtost.
+      wttost.
+      auto.
 Qed.
 
 Lemma cht_app1 : forall b os rs t1 t2 T E,
@@ -2454,6 +2635,18 @@ Proof with eauto.
     + right. dtr. inv H; ssame; eauto.
   - destruct IHET...
     + inv WT. split; try split; eauto; dtr. inv H1. inv H10. exi; eauto.
+    + destruct t; narrow_terms. eauto.
+    + right. dtr. inv H; ssame; eauto.
+  - destruct IHET...
+    + inv WT. split; try split; eauto; dtr. inv H1. inv H10. exi; eauto.
+    + destruct t; narrow_terms. eauto.
+    + right. dtr. inv H; ssame; eauto.
+  - destruct IHET...
+    + inv WT. split; try split; eauto; dtr. inv H1. inv H10. exi; eauto.
+    + destruct t; narrow_terms. eauto.
+    + right. dtr. inv H; ssame; eauto.
+  - destruct IHET...
+    + inv WT. split; try split; eauto; dtr. inv H1. inv H10. exi; eauto.
     + right. dtr. inv H; ssame; eauto.
 Unshelve.
 auto.
@@ -2479,6 +2672,18 @@ assert (value t0) by (eapply waiting_fold_value; eauto). inv WT'. dtr. inv H3. i
 auto.
 auto.
 assert (value t0) by (eapply waiting_fold_value; eauto). inv WT'. dtr. inv H3. inv H11. inv H13. can_res. right. eauto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
+auto.
 auto.
 auto.
 auto.
@@ -2727,6 +2932,15 @@ Inductive appears_free_in : string -> term -> Prop :=
 | afi_emit_add2 : forall x l t1 t2,
     appears_free_in x t2 ->
     appears_free_in x (t_emit_add l t1 t2)
+| afi_na1 : forall x t,
+    appears_free_in x t ->
+    appears_free_in x (t_na1 t)
+| afi_na2 : forall x t,
+    appears_free_in x t ->
+    appears_free_in x (t_na2 t)
+| afi_na3 : forall x t,
+    appears_free_in x t ->
+    appears_free_in x (t_na3 t)
 | afi_fix : forall x t T,
     appears_free_in x t ->
     appears_free_in x (t_fix T t).
@@ -2868,6 +3082,9 @@ Proof using.
       constructor; eauto.
       assert (E1 = false) by (eapply value_no_emit; eauto); subst.
       wtbt. wttost. auto.
+  - inversion H0; eauto.
+  - inversion H0; eauto.
+  - inversion H0; eauto.
   - inversion H0; eauto.
   - inversion H0; eauto.
   - inversion H0; eauto.
@@ -3140,6 +3357,15 @@ Proof using.
       eapply IHt3 in H9; eauto; dtr.
       exists (E1 || E2 || x). split; eauto.
       * destruct E1; destruct E2; destruct E3; crush.
+  - inv H0.
+    + inv H. eapply IHt in H2; eauto; dtr. exists x. split; eauto.
+    + inv H. inv H3. assert (E1 = false) by (eapply value_no_emit; eauto); subst. simpl. exists false. split; eauto. destruct E2; destruct E3; crush.
+  - inv H0.
+    + inv H. eapply IHt in H2; eauto; dtr. exists x. split; eauto.
+    + inv H. inv H3. assert (E2 = false) by (eapply value_no_emit; eauto); subst. simpl. exists false. split; eauto. destruct E1; destruct E3; crush.
+  - inv H0.
+    + inv H. eapply IHt in H2; eauto; dtr. exists x. split; eauto.
+    + inv H. inv H3. assert (E3 = false) by (eapply value_no_emit; eauto); subst. simpl. exists false. split; eauto. destruct E1; destruct E2; crush.
   - inv H0.
     + inv H. exists (false || false || false). split; [|destruct E; auto].
       assert (E = false) by (eapply value_no_emit; eauto); subst.
@@ -3650,6 +3876,12 @@ Proof using.
     eapply IHt2 with (T':=Result) (E':= E4) in H7; eauto.
     eapply IHt3 with (T':=Keyset) (E':= E5) in H8; eauto.
     crush.
+  - inv HT; inv HT'.
+    eapply IHt with (T:=Node) (E:=E') in H2; dtr; auto.
+  - inv HT; inv HT'.
+    eapply IHt with (T:=Node) (E:=E') in H2; dtr; auto.
+  - inv HT; inv HT'.
+    eapply IHt with (T:=Node) (E:=E') in H2; dtr; auto.
   - inv HT; inv HT'.
     eapply IHt with (T':=Arrow (Arrow t t (E0 || E1)) (Arrow t t E0) E1) (E':=E') in H5; crush.
 Qed.
@@ -4288,6 +4520,18 @@ Proof using.
     + eapply IHt3 with (t':=es'0) (os:=os') in H8; dtr; subst; eauto.
       inv H; dtr; split; try split; eauto.
       inv H; dtr. inv H16. exi; eauto.
+  - inv Hstep; inv Hstep'; try solve [fnv]; try solve [exfalso; eapply frontend_no_value; eauto]; try solve [eauto].
+    + eapply IHt with (t':=t') (os:=os') in H1; dtr; subst; eauto.
+      inv H; dtr; split; try split; eauto.
+      inv H; dtr. inv H12. exi; eauto.
+  - inv Hstep; inv Hstep'; try solve [fnv]; try solve [exfalso; eapply frontend_no_value; eauto]; try solve [eauto].
+    + eapply IHt with (t':=t') (os:=os') in H1; dtr; subst; eauto.
+      inv H; dtr; split; try split; eauto.
+      inv H; dtr. inv H12. exi; eauto.
+  - inv Hstep; inv Hstep'; try solve [fnv]; try solve [exfalso; eapply frontend_no_value; eauto]; try solve [eauto].
+    + eapply IHt with (t':=t') (os:=os') in H1; dtr; subst; eauto.
+      inv H; dtr; split; try split; eauto.
+      inv H; dtr. inv H12. exi; eauto.
   - inv Hstep; inv Hstep'; try solve [fnv].
     + eauto.
     + eapply IHt with (t':=t') (os:=os') in H1; dtr; subst; eauto.
@@ -5563,6 +5807,9 @@ Proof using.
     assert (#[x:=t'] t2 = t2) by (apply IHt2; auto).
     assert (#[x:=t'] t3 = t3) by (apply IHt3; auto).
     crush.
+  - crush.
+  - crush.
+  - crush.
   - assert (#[x:=t'] t0 = t0) by (apply IHt; auto).
     crush.
 Qed.
