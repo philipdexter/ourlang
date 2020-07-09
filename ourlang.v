@@ -26,10 +26,10 @@ Ltac exi := eapply ex_intro.
 
 Set Implicit Arguments.
 
-Notation key := nat.
-Notation label := nat.
-Notation keyset := (list key).
-Notation result := nat.
+Definition key := nat.
+Definition label := nat.
+Definition keyset := (list key).
+Definition result := nat.
 
 (* ***********************frontend *)
 
@@ -120,7 +120,7 @@ where "'#[' x ':=' s ']' t" := (e_subst x s t).
 
 (* ***********************end frontend *)
 
-Notation payload := term.
+Definition payload := term.
 Definition edgeset := term.
 Hint Unfold edgeset.
 
@@ -1180,8 +1180,8 @@ Proof using.
   - destruct IHrs with (l:=l).
     + left. destruct H. exists x. crush.
     + destruct a.
-      destruct (Nat.eq_dec n l).
-      * subst. left. exists n0. crush.
+      destruct (Nat.eq_dec l0 l).
+      * subst. left. exists r. crush.
       * right. intro.
         destruct H0.
         apply List.in_inv in H0.
@@ -1199,7 +1199,7 @@ Proof using.
   - destruct IHos with (l:=l).
     + left. destruct H. exists x. crush.
     + destruct a.
-      destruct (Nat.eq_dec n l).
+      destruct (Nat.eq_dec l0 l).
       * subst. left. exists o. crush.
       * right. intro.
         destruct H0.
@@ -1234,9 +1234,9 @@ Lemma lcontext_in_or_os : forall os l ll T,
   (exists op, In (l ->> op) os) \/ ll l = Some T.
 Proof using.
   induction os; intros; auto.
-  destruct a. simpl in H. destruct (Nat.eq_dec n l).
+  destruct a. simpl in H. destruct (Nat.eq_dec l0 l).
   - left. exi; crush.
-  - replace ((n#->(op_type o); ostream_types os ll) l) with ((ostream_types os ll) l) in *.
+  - replace ((l0#->(op_type o); ostream_types os ll) l) with ((ostream_types os ll) l) in *.
     destruct (@IHos l ll T); dtr; auto.
     left; exists x; crush.
     rewrite NMaps.update_neq; eauto.
@@ -1249,9 +1249,9 @@ Proof using.
   induction b; intros; auto.
   destruct a. destruct n. simpl in H.
   apply lcontext_in_or_os in H. destruct H; dtr.
-  - left. exists [], <<N n t e; l0>>, b, x. eauto.
+  - left. exists [], <<N k p e; l0>>, b, x. eauto.
   - apply IHb in H. destruct H; dtr.
-    + left. exists (<<N n t e; l0>> :: x), x0, x1, x2. crush.
+    + left. exists (<<N k p e; l0>> :: x), x0, x1, x2. crush.
     + eauto.
 Qed.
 
@@ -1261,9 +1261,9 @@ Lemma type_in_rstream : forall rs l T,
 Proof using.
   induction rs; intros.
   - inv H.
-  - destruct a.
+  - destruct a. rename l0 into n.
     destruct (Nat.eq_dec l n); subst.
-    + exists n0. crush.
+    + exists r. crush.
     + simpl in H.
       replace ((n#->Result; rstream_types rs) l) with ((rstream_types rs) l) in *.
       apply IHrs in H; dtr. exists x; crush.
@@ -1572,20 +1572,20 @@ Proof using.
       * {
         destruct (value_dec t3).
         - eauto.
-        - remember H2. clear Heqn0. eapply IHt3 in H2. destruct H2. eauto. easy_wt.
+        - remember H2. clear Heqn. eapply IHt3 in H2. destruct H2. eauto. easy_wt.
         }
-      * remember H1. clear Heqn0. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
-    + remember H0. clear Heqn0. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
+      * remember H1. clear Heqn. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
+    + remember H0. clear Heqn. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
   - destruct (value_dec t1).
     + destruct (value_dec t2).
       * eauto.
-      * remember H1. clear Heqn0. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
-    + remember H0. clear Heqn0. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
+      * remember H1. clear Heqn. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
+    + remember H0. clear Heqn. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
   - destruct (value_dec t1).
     + destruct (value_dec t2).
       * eauto.
-      * remember H1. clear Heqn0. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
-    + remember H0. clear Heqn0. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
+      * remember H1. clear Heqn. eapply IHt2 in H1. destruct H1. eauto. easy_wt.
+    + remember H0. clear Heqn. eapply IHt1 in H0. destruct H0. eauto. easy_wt.
   - destruct (value_dec t1).
     + destruct (value_dec t2).
       * destruct (value_dec t3); [exfalso; apply H; eauto|].
@@ -1942,7 +1942,7 @@ Lemma op_reduction_exists : forall c b b1 b2 rs0 os0 term0 k t es os l op,
   exists c', C b os0 rs0 term0 --> c'.
 Proof using.
   intros c b b1 b2 rs0 os0 term0 k t es os l op WT Hceq Hbeq.
-  destruct op; subst.
+  destruct op; subst. rename k0 into l0.
   - destruct (List.in_dec Nat.eq_dec k l0).
     + eapply ex_intro; eapply S_PMap; eauto.
     + destruct b2.
@@ -1951,7 +1951,8 @@ Proof using.
   - destruct b2.
     + eapply ex_intro; eapply S_Last; eauto.
     + destruct s. eapply ex_intro; eapply S_Prop; eauto; crush.
-  - destruct (List.in_dec Nat.eq_dec k l0).
+  - rename k0 into l0.
+    destruct (List.in_dec Nat.eq_dec k l0).
     + eapply ex_intro; eapply S_PFold; eauto.
       Unshelve.
       auto.
@@ -2012,8 +2013,8 @@ Lemma ll_update : forall t Gamma l T' ll T E,
   has_type Gamma (l #-> T'; ll) t T E.
 Proof using.
   induction t; intros; try solve [inv H; eauto].
-  - inv H. assert (n <> l) by (apply fresh_labels). constructor.
-    replace ((l#->T';ll) n) with (ll n); auto.
+  - inv H. assert (l0 <> l) by (apply fresh_labels). constructor.
+    replace ((l0#->T';ll) l) with (ll l); auto.
     rewrite NMaps.update_neq; auto.
 Qed.
 Hint Resolve ll_update.
@@ -2072,7 +2073,7 @@ Lemma ht_ostream_extract : forall os ll l T' t T E,
 Proof using.
   induction os; intros; auto.
   destruct a; simpl in *.
-  repeat (rewrite ll_extract_ostream in H).
+  repeat (rewrite ll_extract_ostream in H). rename l0 into n.
   replace (n #-> op_type o; l #-> T'; ostream_types os ll)
           with (l#->T';n #-> op_type o; ostream_types os ll) in H.
   auto.
@@ -2085,7 +2086,7 @@ Lemma ht_ostream_extract' : forall os ll l T' t T E,
 Proof using.
   induction os; intros; auto.
   destruct a; simpl in *.
-  repeat (rewrite ll_extract_ostream).
+  repeat (rewrite ll_extract_ostream). rename l0 into n.
   replace (n #-> op_type o; l #-> T'; ostream_types os ll)
           with (l#->T';n #-> op_type o; ostream_types os ll).
   auto.
@@ -2148,7 +2149,7 @@ Proof using.
   wtost'. exi. econstructor; eauto.
   eapply wt_ostream_build.
   destruct o; simpl in *;
-  replace (n #-> Result; l #-> T; ll) with (l#->T;n #-> Result;ll); eauto; apply NMaps.update_permute; apply fresh_labels.
+  replace (l0 #-> Result; l #-> T; ll) with (l#->T;l0 #-> Result;ll); eauto; apply NMaps.update_permute; apply fresh_labels.
 Qed.
 Hint Resolve wt_ostream_extension.
 
@@ -2568,7 +2569,7 @@ Proof with eauto.
       inversion H; subst; try solve [inv ET].
       * remember WT as WT'.
         clear HeqWT'.
-        apply all_labels with (l:=label) in WT; auto.
+        apply all_labels with (l:=label0) in WT; auto.
         {
         destruct WT; dtr.
         - eauto.
@@ -2831,14 +2832,14 @@ Proof using.
           destruct H0.
           * destruct n.
             {
-            destruct (value_dec t0).
+            destruct (value_dec p).
             - left.
               constructor; eauto.
               constructor; eauto.
               inv H0; eauto.
             - right.
               copy WT.
-              eapply load_exists with (os:=[]) (b1:=[]) (b2:=b) (k:=n) (rs0:=rs) (t:=t0) (es:=e) in H2; eauto.
+              eapply load_exists with (os:=[]) (b1:=[]) (b2:=b) (k:=k) (rs0:=rs) (t:=p) (es:=e) in H2; eauto.
             }
           * right.
             destruct H0.
@@ -3734,8 +3735,8 @@ Proof using.
               }
               inv H1.
               destruct n.
-              destruct (value_dec t0); eauto.
-              eapply load_exists with (k:=n) (os:=[]) (b1:=[]) (b2:=b) in WT; eauto.
+              destruct (value_dec p); eauto.
+              eapply load_exists with (k:=k) (os:=[]) (b1:=[]) (b2:=b) in WT; eauto.
               destruct WT.
               unfold not in H. exfalso; apply H. exists x. assumption. crush.
             * destruct l as [l op].
@@ -4847,53 +4848,53 @@ Proof using.
       * crush.
   (* S_FusePMap *)
   - destruct n. tsod'. inv H0. apply List.app_inv_head in H2. inv H2.
-    + gotw (C (b0 ++ << N n t' e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> final H :: rs) term1); eauto.
+    + gotw (C (b0 ++ << N k0 t' e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> final H :: rs) term1); eauto.
     + destruct Hfirst as [b' [b'' [b''']]].
       tu1.
       got.
-      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N n t0 e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> 0 :: rs) term1).
+      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N k0 p e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> 0 :: rs) term1).
         one_step; eapply S_FusePMap; eauto; crush.
-      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N n t0 e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> 0 :: rs) term1).
+      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N k0 p e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b3) os1 (l ->>> 0 :: rs) term1).
         one_step; eapply S_Load; eauto; crush.
       * crush.
     + destruct Hsecond as [b' [b'' [b''']]].
       tu2.
       got.
-      * instantiate (1:=C (b0 ++ << N n t0 e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b'' ++ << N k t' es; os >> :: b''') os1 (l ->>> 0 :: rs) term1).
+      * instantiate (1:=C (b0 ++ << N k0 p e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b'' ++ << N k t' es; os >> :: b''') os1 (l ->>> 0 :: rs) term1).
         one_step; eapply S_FusePMap; eauto; crush.
-      * instantiate (1:=C ((b0 ++ << N n t0 e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b'') ++ << N k t' es; os >> :: b''') os1 (l ->>> 0 :: rs) term1).
+      * instantiate (1:=C ((b0 ++ << N k0 p e; os2 ++ l' ->> pmap (pmap_compose f' f) ks :: os3 >> :: b'') ++ << N k t' es; os >> :: b''') os1 (l ->>> 0 :: rs) term1).
         one_step; eapply S_Load; eauto; crush.
       * crush.
   (* S_SwapReads *)
   - destruct n. tsod'.
     + inv H. apply List.app_inv_head in H3. inv H3.
-      gotw (C (b0 ++ << N n t' e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1); eauto.
+      gotw (C (b0 ++ << N k0 t' e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1); eauto.
     + destruct Hfirst as [b' [b'' [b''']]].
       tu1.
       got.
-      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N n t1 e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1).
+      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N k0 p e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1).
         one_step; eapply S_SwapReads; eauto; crush.
-      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N n t1 e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1).
+      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N k0 p e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b3) os1 rs term1).
         one_step; eapply S_Load; eauto; crush.
       * crush.
     + destruct Hsecond as [b' [b'' [b''']]].
       tu2.
       got.
-      * instantiate (1:=C (b0 ++ << N n t1 e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b'' ++ << N k t' es; os >> :: b''') os1 rs term1).
+      * instantiate (1:=C (b0 ++ << N k0 p e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b'' ++ << N k t' es; os >> :: b''') os1 rs term1).
         one_step; eapply S_SwapReads; eauto; crush.
-      * instantiate (1:=C ((b0 ++ << N n t1 e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b'') ++ << N k t' es; os >> :: b''') os1 rs term1).
+      * instantiate (1:=C ((b0 ++ << N k0 p e; os2 ++ l' ->> pfold f' t'0 ks' :: l ->> pfold f t0 ks :: os3 >> :: b'') ++ << N k t' es; os >> :: b''') os1 rs term1).
         one_step; eapply S_Load; eauto; crush.
       * crush.
   (* S_Prop *)
   - destruct n1. tsod.
     + inv H. apply List.app_inv_head in H2; inv H2.
-      gotw (C (b0 ++ << N n t' e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
+      gotw (C (b0 ++ << N k0 t' e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
     + destruct Hfirst as [b' [b'' [b''']]].
       tu1.
       got.
-      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N n t0 e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
+      * instantiate (1:=C ((b' ++ << N k t' es; os >> :: b'') ++ << N k0 p e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
         one_step; eapply S_Prop; eauto; crush.
-      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N n t0 e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
+      * instantiate (1:=C (b' ++ << N k t' es; os >> :: b'' ++ << N k0 p e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
       * crush.
     + destruct Hsecond as [b' [b'' [b''']]].
       tu2.
@@ -4901,16 +4902,16 @@ Proof using.
       destruct b''; simpl in *.
       - inv H1.
         got.
-        + instantiate (1:=C (b0 ++ << N n t0 e; os2 >> :: << N k t' es; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
+        + instantiate (1:=C (b0 ++ << N k0 p e; os2 >> :: << N k t' es; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
           one_step; eapply S_Prop; eauto; crush.
-        + instantiate (1:=C ((b0 ++ [<< N n t0 e; os2 >>]) ++ << N k t' es; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
+        + instantiate (1:=C ((b0 ++ [<< N k0 p e; os2 >>]) ++ << N k t' es; os3 ++ [l ->> op] >> :: b3) os1 rs term1); eauto.
           one_step; eapply S_Load; eauto; crush.
         + crush.
       - inv H1.
         got.
-        + instantiate (1:=C (b0 ++ << N n t0 e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b'' ++ << N k t' es; os >> :: b''') os1 rs term1); eauto.
+        + instantiate (1:=C (b0 ++ << N k0 p e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b'' ++ << N k t' es; os >> :: b''') os1 rs term1); eauto.
           one_step; eapply S_Prop; eauto; crush.
-        + instantiate (1:=C ((b0 ++ << N n t0 e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b'') ++ << N k t' es; os >> :: b''') os1 rs term1); eauto.
+        + instantiate (1:=C ((b0 ++ << N k0 p e; os2 >> :: << n2; os3 ++ [l ->> op] >> :: b'') ++ << N k t' es; os >> :: b''') os1 rs term1); eauto.
           one_step; eapply S_Load; eauto; crush.
         + crush.
       }
@@ -5090,7 +5091,7 @@ Lemma lcontext_not_in_or_os' : forall os l ll,
 Proof using.
   induction os; intros.
   - auto.
-  - destruct a. simpl. destruct (Nat.eq_dec n l); subst.
+  - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l); subst.
     + exfalso. apply H. exists o. crush.
     + replace ((n #-> op_type o; ostream_types os ll) l) with ((ostream_types os ll) l).
       apply IHos.
@@ -5107,9 +5108,9 @@ Proof using.
   - auto.
   - destruct a. destruct n. simpl in *.
     apply lcontext_not_in_or_os'.
-    + intro; dtr. apply H. apply List.in_split in H1; dtr. exists x0, x1, [], b, <<N n t e; l0>>, x. crush.
+    + intro; dtr. apply H. apply List.in_split in H1; dtr. exists x0, x1, [], b, <<N k p e; l0>>, x. crush.
     + apply IHb.
-      intro. dtr. apply H. exists x, x0, (<<N n t e; l0>> :: x1), x2, x3, x4. destruct x3. simpl in *. subst. crush. auto.
+      intro. dtr. apply H. exists x, x0, (<<N k p e; l0>> :: x1), x2, x3, x4. destruct x3. simpl in *. subst. crush. auto.
 Qed.
 
 Lemma lcontext_not_in_or_rs' : forall rs l,
@@ -5118,9 +5119,9 @@ Lemma lcontext_not_in_or_rs' : forall rs l,
 Proof using.
   induction rs; intros.
   - auto.
-  - destruct a. simpl in *.
+  - destruct a. simpl in *. rename l0 into n.
     destruct (Nat.eq_dec n l); subst.
-    + exfalso. apply H. exists n0. left. auto.
+    + exfalso. apply H. exists r. left. auto.
     + replace ((n #-> Result; rstream_types rs) l) with ((rstream_types rs) l).
       apply IHrs.
       intro. dtr. apply H. exists x. crush.
@@ -5133,7 +5134,7 @@ Lemma in_ostream_labels : forall os l op,
 Proof using.
   induction os; intros.
   - auto.
-  - destruct a. simpl. destruct (Nat.eq_dec n l).
+  - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l).
     + auto.
     + inv H; eauto.
       inv H0. eauto.
@@ -5145,7 +5146,7 @@ Lemma in_rstream_labels : forall rs l v,
 Proof using.
   induction rs; intros.
   - auto.
-  - destruct a. simpl. destruct (Nat.eq_dec n l).
+  - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l).
     + auto.
     + inv H; eauto.
       inv H0. eauto.
@@ -5159,7 +5160,7 @@ Proof using.
   - dtr. inv H0.
   - inv H. auto.
   - destruct a. simpl in *.
-    destruct (Nat.eq_dec n l).
+    rename l0 into n. destruct (Nat.eq_dec n l).
     + subst. rewrite NMaps.update_eq in H. inv H.
     + replace ((n #-> op_type o; ostream_types os ll) l) with ((ostream_types os ll) l) in H.
       apply IHos in H; dtr.
@@ -5742,23 +5743,23 @@ Proof using.
       intro. inv H; auto.
   - inv H.
     + intro. inversion H. eapply fresh_labels; eauto.
-    + apply IHt1 with (l:=l) in H2; auto.
+    + apply IHt1 with (l:=l0) in H2; auto.
       intro. inv H; auto.
-    + apply IHt2 with (l:=l) in H9; auto.
+    + apply IHt2 with (l:=l0) in H9; auto.
       intro. inv H; auto.
-    + apply IHt3 with (l:=l) in H10; auto.
-      intro. inv H; auto.
-  - inv H.
-    + intro. inversion H. eapply fresh_labels; eauto.
-    + apply IHt1 with (l:=l) in H2; auto.
-      intro. inv H; auto.
-    + apply IHt2 with (l:=l) in H8; auto.
+    + apply IHt3 with (l:=l0) in H10; auto.
       intro. inv H; auto.
   - inv H.
     + intro. inversion H. eapply fresh_labels; eauto.
-    + apply IHt1 with (l:=l) in H2; auto.
+    + apply IHt1 with (l:=l0) in H2; auto.
       intro. inv H; auto.
-    + apply IHt2 with (l:=l) in H8; auto.
+    + apply IHt2 with (l:=l0) in H8; auto.
+      intro. inv H; auto.
+  - inv H.
+    + intro. inversion H. eapply fresh_labels; eauto.
+    + apply IHt1 with (l:=l0) in H2; auto.
+      intro. inv H; auto.
+    + apply IHt2 with (l:=l0) in H8; auto.
       intro. inv H; auto.
   - inv H.
     + apply IHt1 with (l:=l) in H2; auto.
@@ -6096,7 +6097,7 @@ Proof using.
     eauto.
   (* S_PMap *)
   - destruct n1.
-    eapply target_same_or_different with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=b0) (b4:=b3) (k:=n) (v:=t) (k':=k) (v':=v) in H1; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=b0) (b4:=b3) (k:=k0) (v:=p) (k':=k) (v':=v) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + destruct H1. destruct H2. destruct H3. subst.
@@ -6109,24 +6110,24 @@ Proof using.
       destruct x0.
       * inv H.
         simpl in *.
-        eapply target_unique with (b1:=x ++ [<< N n t e; l ->> op :: os1 >>]) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+        eapply target_unique with (b1:=x ++ [<< N k0 p e; l ->> op :: os1 >>]) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         inv H2.
         {
           got.
-          - instantiate (1:=C ((x ++ [<< N n t e; os1 >>]) ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C ((x ++ [<< N k0 p e; os1 >>]) ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' ++ [l ->> op] >> :: b3) os0 rs0 term0).
             one_step. eapply S_PMap; crush.
-          - instantiate (1:=C (x ++ << N n t e; os1 >> :: << N k (t_app f v) es; (l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'') ++ [l ->> op] >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C (x ++ << N k0 p e; os1 >> :: << N k (t_app f v) es; (l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'') ++ [l ->> op] >> :: b3) os0 rs0 term0).
             one_step. eapply S_Prop; crush.
           - crush.
         }
       * inv H2.
         inv H.
-        eapply target_unique with (b1:=x ++ << N n t e; l ->> op :: os1 >> :: << n2; os2 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+        eapply target_unique with (b1:=x ++ << N k0 p e; l ->> op :: os1 >> :: << n2; os2 >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
         {
           got.
-          - instantiate (1:=C ((x ++ << N n t e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C ((x ++ << N k0 p e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0) ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
             one_step. eapply S_PMap; crush.
-          - instantiate (1:=C (x ++ << N n t e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
+          - instantiate (1:=C (x ++ << N k0 p e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: x0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: b3) os0 rs0 term0).
             one_step. eapply S_Prop; crush.
           - crush.
         }
@@ -6134,11 +6135,11 @@ Proof using.
     + destruct H0. destruct H0. destruct H0.
       eapply target_unique with (b1:=b1) (b2:=<< n2; os2 >> :: b2) (b3:=x ++ << N k v es; l0 ->> pmap f ks :: os1'' >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
-      eapply target_unique with (b1:=x) (b2:=x0 ++ << N n t e; l ->> op :: os1 >> :: << n2; os2 >> :: b2) (b3:=b0) (b4:=b3) in H1; eauto; crush.
+      eapply target_unique with (b1:=x) (b2:=x0 ++ << N k0 p e; l ->> op :: os1 >> :: << n2; os2 >> :: b2) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:= C (b0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n t e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
+      * instantiate (1:= C (b0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N k0 p e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
         one_step. eapply S_PMap; crush.
-      * instantiate (1:= C ((b0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n t e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
+      * instantiate (1:= C ((b0 ++ << N k (t_app f v) es; l0 ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 p e; os1 >> :: << n2; os2 ++ [l ->> op] >> :: b2) os0 rs0 term0).
         one_step. eapply S_Prop; crush.
       * crush.
   (* S_Last *)
@@ -6661,7 +6662,7 @@ Proof using.
     rename H0 into H.
     rename H2 into H1.
     destruct n.
-    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=n) (v':=t) in H1; eauto.
+    eapply target_same_or_different with (b1:=b1) (b2:=b2) (b3:=b0) (b4:=b3) (k:=k) (v:=v) (k':=k0) (v':=p) in H1; eauto.
     destruct H1; try destruct H0.
     (* Same target *)
     + destruct H1. destruct H2. destruct H3. subst.
@@ -6671,7 +6672,7 @@ Proof using.
         inv H4.
         {
         destruct b3.
-        - assert (exists n m t', fstar n (t_app f' (t_app f0 t)) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) t) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t').
+        - assert (exists n m t', fstar n (t_app f' (t_app f0 p)) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) p) (l' ->>> 0 :: l0 ->>> 0 :: rs0) t').
           {
             apply pmap_compose_comm.
             - inv WT; dtr. inv H1. wtbdist. inv H3. inv H15. inv H7. inv H15. eauto.
@@ -6681,36 +6682,36 @@ Proof using.
             - apply to_value.
           }
           dtr. rename H into star1. rename H0 into star2.
-          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec n ks0))) by eauto.
+          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec k0 ks0))) by eauto.
           got.
-          + instantiate (1:=C (b0 ++ [<< N n x1 e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
+          + instantiate (1:=C (b0 ++ [<< N k0 x1 e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
             apply ex_intro with (3 + x).
             eapply Step.
-            instantiate (1:=C (b0 ++ [<< N n (t_app f0 t) e; l' ->> pmap f' ks0 :: os2 >>]) os0 (l0 ->>> _ :: rs0) term1).
+            instantiate (1:=C (b0 ++ [<< N k0 (t_app f0 p) e; l' ->> pmap f' ks0 :: os2 >>]) os0 (l0 ->>> _ :: rs0) term1).
             eapply S_Last; crush.
             apply List.remove_In in H. assumption.
             eapply Step.
-            instantiate (1:=C (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >>]) os0 (l0 ->>> final _ :: rs0) term1).
+            instantiate (1:=C (b0 ++ [<< N k0 (t_app f' (t_app f0 p)) e; l' ->> pmap f' (remove Nat.eq_dec k0 ks0) :: os2 >>]) os0 (l0 ->>> final _ :: rs0) term1).
             eapply S_PMap; crush.
             instantiate (1:=Hnot); crush.
             eapply Step.
-            eapply S_Last with (b:=b0 ++ [<< N n (t_app f' (t_app f0 t)) e; l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >>]); eauto.
+            eapply S_Last with (b:=b0 ++ [<< N k0 (t_app f' (t_app f0 p)) e; l' ->> pmap f' (remove Nat.eq_dec k0 ks0) :: os2 >>]); eauto.
             crush.
             apply List.remove_In in H. assumption.
-            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: l0 ->>> 0 :: rs0) (t0:=term1) in star1.
+            apply fstar_into_star_load with (b1:=b0) (k:=k0) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: l0 ->>> 0 :: rs0) (t0:=term1) in star1.
             simpl. instantiate (1:=Hnot'). simpl. auto.
-          + instantiate (1:=C (b0 ++ [<< N n x1 e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
+          + instantiate (1:=C (b0 ++ [<< N k0 x1 e; os2 >>]) os0 (l' ->>> final _ :: l0 ->>> 0 :: rs0) term1).
             apply ex_intro with (2 + x0).
             eapply Step.
             eapply S_PMap; crush.
             eapply Step.
-            eapply S_Last with (op:=pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)); crush.
+            eapply S_Last with (op:=pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)); crush.
             apply List.remove_In in H. assumption.
-            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: l0 ->>> 0 :: rs0) (t0:=term1) in star2.
+            apply fstar_into_star_load with (b1:=b0) (k:=k0) (b2:=[]) (es:=e) (os:=os2) (os0:=os0) (rs:=l' ->>> 0 :: l0 ->>> 0 :: rs0) (t0:=term1) in star2.
             simpl. instantiate (1:=Hnot'). simpl. auto.
           + crush.
         - destruct s.
-          assert (exists n m t', fstar n (t_app f' (t_app f0 t)) (l0 ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) t) (l0 ->>> 0 :: rs0) t').
+          assert (exists n m t', fstar n (t_app f' (t_app f0 p)) (l0 ->>> 0 :: rs0) t' /\ fstar m (t_app (pmap_compose f' f0) p) (l0 ->>> 0 :: rs0) t').
           {
             apply pmap_compose_comm.
             - inv WT; dtr. inv H1. wtbdist. inv H3. inv H15. inv H7. inv H15. eauto.
@@ -6720,68 +6721,68 @@ Proof using.
             - apply to_value.
           }
           dtr. rename H into star1. rename H0 into star2.
-          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec n ks0))) by eauto.
+          assert (Hnot' : not_fold_or_done (pmap f' (remove Nat.eq_dec k0 ks0))) by eauto.
           got.
-          + instantiate (1:=C (b0 ++ << N n x1 e; os2 >> :: << n0; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l0 ->>> final _ :: rs0) term1).
+          + instantiate (1:=C (b0 ++ << N k0 x1 e; os2 >> :: << n; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 (l0 ->>> final _ :: rs0) term1).
             apply ex_intro with (4+x).
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app f0 t) e; l' ->> pmap f' ks0 :: os2 >> :: << n0; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            instantiate (1:=C (b0 ++ << N k0 (t_app f0 p) e; l' ->> pmap f' ks0 :: os2 >> :: << n; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
             apply List.remove_In in H. assumption.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; l' ->> pmap f' (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            instantiate (1:=C (b0 ++ << N k0 (t_app f' (t_app f0 p)) e; l' ->> pmap f' (remove Nat.eq_dec k0 ks0) :: os2 >> :: << n; l ++ [l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 rs0 term1).
             eapply S_PMap; crush.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3) os0 rs0 term1).
+            instantiate (1:=C (b0 ++ << N k0 (t_app f' (t_app f0 p)) e; os2 >> :: << n; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 rs0 term1).
             eapply S_Prop; crush.
             apply List.remove_In in H. assumption.
             eapply Step.
-            assert (b0 ++ << N n (t_app f' (t_app f0 t)) e; os2 >> :: << n0; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec n ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec n ks0)] >> :: b3 = (b0 ++ [<< N n (t_app f' (t_app f0 t)) e; os2 >>]) ++ << n0; l ++ l0 ->> pmap f0 (remove Nat.eq_dec n ks0) :: l' ->> pmap f' (remove Nat.eq_dec n ks0) :: [] >> :: b3) by crush.
+            assert (b0 ++ << N k0 (t_app f' (t_app f0 p)) e; os2 >> :: << n; (l ++ [l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0)]) ++ [l' ->> pmap f' (remove Nat.eq_dec k0 ks0)] >> :: b3 = (b0 ++ [<< N k0 (t_app f' (t_app f0 p)) e; os2 >>]) ++ << n; l ++ l0 ->> pmap f0 (remove Nat.eq_dec k0 ks0) :: l' ->> pmap f' (remove Nat.eq_dec k0 ks0) :: [] >> :: b3) by crush.
             rewrite H.
             eapply S_FusePMap; crush.
-            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=<< n0; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l0 ->>> 0 :: rs0) (t0:=term1) in star1.
+            apply fstar_into_star_load with (b1:=b0) (k:=k0) (b2:=<< n; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l0 ->>> 0 :: rs0) (t0:=term1) in star1.
             simpl. instantiate (1:=Hnot'). simpl. crush.
-          + instantiate (1:=C (b0 ++ << N n x1 e; os2 >> :: << n0; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+          + instantiate (1:=C (b0 ++ << N k0 x1 e; os2 >> :: << n; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
             apply ex_intro with (2 + x0).
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app (pmap_compose f' f0) t) e; l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0) :: os2 >> :: << n0; l >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+            instantiate (1:=C (b0 ++ << N k0 (t_app (pmap_compose f' f0) p) e; l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0) :: os2 >> :: << n; l >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
             eapply S_PMap; crush.
             eapply Step.
-            instantiate (1:=C (b0 ++ << N n (t_app (pmap_compose f' f0) t) e; os2 >> :: << n0; l  ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+            instantiate (1:=C (b0 ++ << N k0 (t_app (pmap_compose f' f0) p) e; os2 >> :: << n; l  ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)] >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
             eapply S_Prop; eauto. crush. apply List.remove_In in H. assumption.
-            apply fstar_into_star_load with (b1:=b0) (k:=n) (b2:=<< n0; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec n ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l0 ->>> 0 :: rs0) (t0:=term1) in star2.
+            apply fstar_into_star_load with (b1:=b0) (k:=k0) (b2:=<< n; l ++ [l' ->> pmap (pmap_compose f' f0) (remove Nat.eq_dec k0 ks0)] >> :: b3) (es:=e) (os:=os2) (os0:=os0) (rs:=l0 ->>> 0 :: rs0) (t0:=term1) in star2.
             auto.
           + crush.
         }
       * inv H4.
         {
           got.
-          * instantiate (1:= C (b0 ++ << N n (t_app f t) e; (l ->> pmap f (remove Nat.eq_dec n ks) :: os1) ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> final _ :: rs0) term1).
+          * instantiate (1:= C (b0 ++ << N k0 (t_app f p) e; (l ->> pmap f (remove Nat.eq_dec k0 ks) :: os1) ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> final _ :: rs0) term1).
             one_step. eapply S_FusePMap; crush.
-          * instantiate (1:= C (b0 ++ << N n (t_app f t) e; l ->> pmap f (remove Nat.eq_dec n ks) :: os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+          * instantiate (1:= C (b0 ++ << N k0 (t_app f p) e; l ->> pmap f (remove Nat.eq_dec k0 ks) :: os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
             one_step. eapply S_PMap; crush.
           * crush.
         }
     (* First first *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N n t e; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x1) in H0; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x) (b4:=x0 ++ << N k0 p e; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x1) in H0; crush.
       inv H.
       eapply target_unique with (b1:=x ++ << N k v es; l ->> pmap f ks :: os1'' >> :: x0) (b2:=x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C ((x ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N n t e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+      * instantiate (1:=C ((x ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0) ++ << N k0 p e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
         one_step. eapply S_FusePMap; crush.
-      * instantiate (1:=C (x ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N n t e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
+      * instantiate (1:=C (x ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x0 ++ << N k0 p e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: b3) os0 (l0 ->>> 0 :: rs0) term1).
         one_step. eapply S_PMap; crush.
       * crush.
     (* First second *)
     + destruct H0. destruct H0. destruct H0.
-      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N n t e; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x0) (b4:=x1) in H0; eauto; crush.
+      eapply target_unique with (b1:=b1) (b2:=b2) (b3:=x ++ << N k0 p e; os1 ++ l0 ->> pmap f0 ks0 :: l' ->> pmap f' ks0 :: os2 >> :: x0) (b4:=x1) in H0; eauto; crush.
       inv H.
       eapply target_unique with (b1:=x) (b2:=x0 ++ << N k v es; l ->> pmap f ks :: os1'' >> :: x1) (b3:=b0) (b4:=b3) in H1; eauto; crush.
       got.
-      * instantiate (1:=C (b0 ++ << N n t e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0 ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l0 ->>> 0 :: rs0) term1).
+      * instantiate (1:=C (b0 ++ << N k0 p e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0 ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l0 ->>> 0 :: rs0) term1).
         one_step. eapply S_FusePMap; crush.
-      * instantiate (1:=C ((b0 ++ << N n t e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0) ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l0 ->>> 0 :: rs0) term1).
+      * instantiate (1:=C ((b0 ++ << N k0 p e; os1 ++ l' ->> pmap (pmap_compose f' f0) ks0 :: os2 >> :: x0) ++ << N k (t_app f v) es; l ->> pmap f (remove Nat.eq_dec k ks) :: os1'' >> :: x1) os0 (l0 ->>> 0 :: rs0) term1).
         one_step. eapply S_PMap; crush.
       * crush.
   (* S_SwapReads *)
