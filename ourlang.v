@@ -384,6 +384,8 @@ end.
 
 Axiom fresh_labels : forall (l:label) l', l <> l'.
 Hint Immediate fresh_labels.
+Axiom fresh_keys : forall (k:key) k', k <> k'.
+Hint Immediate fresh_keys.
 
 Lemma ostream_types_zero_lift : forall os l T ll,
   ostream_types os (l#->T;ll) = (l#->T;(ostream_types os ll)).
@@ -3326,46 +3328,66 @@ Proof using.
 Qed.
 Hint Resolve cht_to_wtop_cons.
 
-Axiom label_types_only_results : forall (ll:lcontext) l T, ll l = Some T -> T = Result.
-
 Ltac inv_type := try (match goal with | [H : config_has_type _ _ _ |- _] => inv H end);
                       match goal with | [H : has_type _ _ _ _ _ |- _] => inv H end.
 
 Hint Immediate NMaps.update_eq.
 
-Theorem preservation' : forall t rs os t' ll T E,
-  has_type empty ll t T E ->
-  FRf t rs ==> FRt t' os ->
-  exists E', has_type empty (ostream_types os ll) t' T E' /\ (match E with
-                                                         | false => E' = false
-                                                         | _ => True
-                                                         end).
+Lemma type_in_rstream' : forall rs l v,
+  In (l ->>> v) rs ->
+  (rstream_types rs) l = Some Result.
 Proof using.
-  induction t; intros; try solve [inv H0].
+  induction rs; intros; crush.
+  - destruct a. destruct (Nat.eq_dec l l0); subst.
+    + apply NMaps.update_eq.
+    + rewrite NMaps.update_neq; auto. apply IHrs with v; auto.
+Qed.
+
+Lemma in_rstream_labels : forall rs l v,
+  In (l ->>> v) rs ->
+  In l (rstream_labels rs).
+Proof using.
+  induction rs; intros.
+  - auto.
+  - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l).
+    + auto.
+    + inv H; eauto.
+      inv H0. eauto.
+Qed.
+
+Theorem preservation' : forall t b os0 rs os t' T E,
+  config_has_type (C b os0 rs t) T E ->
+  distinct (List.concat [backend_labels b; ostream_labels os0; rstream_labels rs]) ->
+  FRf t rs ==> FRt t' os ->
+  exists E', has_type empty (ostream_types os (ostream_types os0 (backend_types b (rstream_types rs)))) t' T E' /\
+        (match E with
+         | false => E' = false
+         | _ => True
+         end).
+Proof using.
+  induction t; intros b os0 rs os t' T E H Hdistinct H0; try solve [inv H0]; inv H; rename H7 into Hwtb; rename H8 into Hwttos; rename H9 into H.
   - inv H0.
-    + exists E. split; [|destruct E; auto].
+    + exists E. split; [|destruct E; auto]; simpl in *.
       inv H. inv H5.
       assert (E3 = false) by (eapply value_no_emit; eauto); subst.
       replace (E1 || false || false) with E1.
-      eapply substitution_preserves_typing; eauto.
+      eapply substitution_preserves_typing; wtbt; wttost; eauto.
       destruct E1; auto.
     + inv H.
-      eapply IHt1 with (ll:=ll) (T:=Arrow T11 T E1) (E:=E2) in H2; dtr.
+      eapply IHt1 with (T:=Arrow T11 T E1) (E:=E2) in H2; eauto; dtr.
       exists (E1 || x || E3). split.
       * {
         econstructor.
         - instantiate (1:=T11).
           eauto.
-        - auto.
+        - wtbt; wttost; auto.
         }
       * destruct E1; destruct E2; destruct E3; crush.
-      * auto.
     + inv H.
-      eapply IHt2 with (T:=T11) (E:=E3) in H7; dtr.
+      eapply IHt2 with (T:=T11) (E:=E3) in H7; eauto; dtr.
       exists (E1 || E2 || x). split.
       * eauto.
       * destruct E1; destruct E2; destruct E3; crush.
-      * eauto.
   - inv H0.
     + inv H.
       eapply IHt1 in H2; eauto; dtr.
@@ -3376,7 +3398,30 @@ Proof using.
       exists (E1 || x). split; eauto.
       * destruct E1; destruct E2; crush.
   - inv H0.
-    + inv H. exists E. inv H4. apply label_types_only_results in H5; subst. split; eauto.
+    + inv H. exists E. inv H4. simpl. wtbt; wttost.
+      assert (T = Result).
+      { assert (distinct (List.concat [backend_labels b; ostream_labels os0; rstream_labels rs])) by eauto.
+        apply lcontext_in_or_os in H5; destruct H5; dtr.
+        - simpl in *. apply List.in_split in H0; dtr; subst.
+          exfalso. rewrite ostream_labels_dist in H. simpl in *.
+          replace (backend_labels b ++ (ostream_labels x0 ++ l :: ostream_labels x1) ++ rstream_labels rs ++ [])
+                  with ((backend_labels b ++ ostream_labels x0) ++ l :: ostream_labels x1 ++ rstream_labels rs ++ []) in H by crush.
+          apply distinct_rotate_rev in H. apply distinct_remove in H; dtr.
+          apply H0. apply List.in_or_app. right. apply List.in_or_app. right. apply in_rstream_labels in H2. crush.
+        - apply lcontext_in_or_b in H0; destruct H0; dtr.
+          + simpl in *. apply List.in_split in H1; dtr; subst; destruct x0; simpl in *; subst.
+            exfalso. rewrite backend_labels_dist in H; simpl in *.
+            unfold backend_labels at 2 in H; simpl in *. rewrite ostream_labels_dist in H; simpl in *.
+            replace ((backend_labels x ++
+          (ostream_labels x3 ++ l :: ostream_labels x4) ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) x1)) ++
+         ostream_labels os0 ++ rstream_labels rs ++ []) with ((backend_labels x ++
+          ostream_labels x3) ++ l :: ostream_labels x4 ++ List.concat (map (fun s : station => ostream_labels (get_ostream s)) x1) ++
+         ostream_labels os0 ++ rstream_labels rs ++ []) in H by crush.
+            apply distinct_rotate_rev in H. apply distinct_remove in H; dtr.
+          apply H0. apply List.in_or_app. right. apply List.in_or_app. right. apply in_rstream_labels in H2. crush.
+          + apply type_in_rstream' in H2. crush.
+      }
+      subst; split; eauto.
     + inv H.
       eapply IHt in H2; eauto; dtr.
       exists x. split; eauto.
@@ -3384,20 +3429,20 @@ Proof using.
     + inv H. exists false. split; simpl; eauto.
     + inv H.
       eapply IHt1 in H2; eauto; dtr.
-      exists true. split; eauto.
+      exists true. split; wtbt; wttost; eauto.
     + inv H.
-      eapply IHt2 in H11; eauto; dtr.
-      exists true. split; eauto.
+      eapply IHt2 in H9; eauto; dtr.
+      exists true. split; wtbt; wttost; eauto.
     + inv H.
-      eapply IHt3 in H13; eauto; dtr.
-      exists true. split; eauto.
+      eapply IHt3 in H10; eauto; dtr.
+      exists true. split; wtbt; wttost; eauto.
   - inv H0.
     + inv H. exists false. split; simpl; eauto.
     + inv H.
       eapply IHt1 in H2; eauto; dtr.
       exists true. split; eauto.
     + inv H.
-      eapply IHt2 in H10; eauto; dtr.
+      eapply IHt2 in H8; eauto; dtr.
       exists true. split; eauto.
   - inv H0.
     + inv H. exists false. split; simpl; auto.
@@ -3405,20 +3450,20 @@ Proof using.
       eapply IHt1 in H2; eauto; dtr.
       exists true. split; eauto.
     + inv H.
-      eapply IHt2 in H10; eauto; dtr.
+      eapply IHt2 in H8; eauto; dtr.
       exists true. split; eauto.
   - inv H0.
     + inv H.
       eapply IHt1 in H2; eauto; dtr.
-      exists (x || E2 || E3). split; eauto.
+      exists (x || E2 || E3). split; wtbt; wttost; eauto.
       * destruct E1; destruct E2; destruct E3; crush.
     + inv H.
       eapply IHt2 in H8; eauto; dtr.
-      exists (E1 || x || E3). split; eauto.
+      exists (E1 || x || E3). split; wtbt; wttost; eauto.
       * destruct E1; destruct E2; destruct E3; crush.
     + inv H.
       eapply IHt3 in H9; eauto; dtr.
-      exists (E1 || E2 || x). split; eauto.
+      exists (E1 || E2 || x). split; wtbt; wttost; eauto.
       * destruct E1; destruct E2; destruct E3; crush.
   - inv H0.
     + inv H. eapply IHt in H2; eauto; dtr. exists x. split; eauto.
@@ -3438,35 +3483,36 @@ Proof using.
       * replace E3 with (E3 || false || false).
         {
         econstructor; [instantiate (1:=(Arrow t t (E2 || E3)))|].
-        - apply context_invariance with empty; auto.
+        - apply context_invariance with empty; wtbt; wttost; auto.
           intros; apply typable_empty__closed in H7; unfold closed in H7; exfalso; apply (@H7 x); auto.
         - replace false with (false || false || false).
           econstructor; simpl.
-          apply context_invariance with empty. auto.
+          apply context_invariance with empty. wtbt; wttost; auto.
           intros; apply typable_empty__closed in H7; unfold closed in H7; exfalso; apply (@H7 x); auto.
           auto.
         }
         destruct E3; auto.
       * auto.
       * destruct E2; destruct E3; auto.
-    + inv H. eapply IHt in H7; eauto; dtr.
+    + inv H. eapply IHt in H2; eauto; dtr.
       exists x. split; eauto.
 Qed.
 
 Theorem preservation : forall c c' T E,
   config_has_type c T E ->
+  distinct (config_labels c) ->
   c --> c'  ->
   exists E', config_has_type c' T E' /\ (match E with
                                     | false => E' = false
                                     | _ => True
                                     end).
 Proof with eauto.
-  intros c c' T E Hht Hstep.
+  intros c c' T E Hht Hdistinct Hstep.
   generalize dependent T.
   generalize dependent E.
   induction Hstep; intros; subst c.
   - inversion Hht; subst.
-    copy H0. rename H0 into Hstep. apply preservation' with (ll:=ll') (T:=T) (E:=E) in H; eauto; dtr.
+    copy H0. rename H0 into Hstep. apply preservation' with (b:= b) (os0:=os) (rs:=rs) (T:=T) (E:=E) in H; eauto; dtr.
     exists x. split; eauto.
     wtbt'. wttost'.
     econstructor.
@@ -3572,27 +3618,59 @@ Proof with eauto.
       rewrite ll_swap_backend. eauto.
     + wtbt. wttost. rewrite backend_types_app in H8. simpl in *. destruct n1; destruct n2; simpl in *. eauto.
   - subst. exists E. split; [|destruct E; eauto].
-    inv Hht. apply well_typed_backend_dist' in H6; dtr. inv H0.
+    copy Hht. rename H into Hht'. inv Hht. apply well_typed_backend_dist' in H6; dtr. copy H0. inv H0.
     copy H1. rename H1 into Hstep. eapply preservation' with (T:=Result) (E:=false) in H0; dtr; subst; eauto.
+    econstructor; eauto. eapply well_typed_backend_dist; eauto.
+    inv H2. econstructor; eauto. simpl. wtbt. eauto. simpl. wtbt. wtbt'. eauto.
+    clear H0 H15 H14 H13 H11 H2 H8 H7 Hht' Hstep.
+    unfold config_labels in *.
+    rewrite backend_labels_dist in *. simpl in *.
+    rewrite <- List.app_assoc in Hdistinct.
+    apply distinct_concat in Hdistinct; dtr.
+    unfold backend_labels in H1; simpl in *.
+    rewrite <- List.app_assoc in H1.
+    apply distinct_concat in H1; dtr.
+    apply distinct_app_comm in H2.
+    rewrite <- List.app_assoc in H2.
+    apply distinct_concat in H2; dtr. auto.
   - subst. exists E. split; [|destruct E; eauto].
     inv Hht. apply well_typed_backend_dist' in H6; dtr. inv H0.
     wtosdist. inv H2. inv H13.
-    copy H1. rename H1 into Hstep. eapply preservation' with (T:=Result) (E:=false) in H2; dtr; subst; eauto.
-    econstructor; eauto.
-    eapply well_typed_backend_dist; auto.
-    + instantiate (1:=x); auto.
-    + copy H14; apply wt_to_backend_types in H14; subst.
-      copy H9; apply wt_to_ostream_types in H9; subst.
-      copy H0; apply wt_to_ostream_types in H0; subst.
-      copy H; apply wt_to_backend_types in H; subst.
-      copy H7; apply wt_to_top_ostream_types in H7; subst.
-      simpl in *.
-      assert (well_typed_backend (rstream_types rs0) (backend_types (<< N k t es; os ++ l ->> pfold f t1' ks :: os' >> :: b2) (rstream_types rs0)) (<< N k t es; os ++ l ->> pfold f t1' ks :: os' >> :: b2)).
-      {
-        eapply wt_backend_build; eauto.
-      }
-      simpl in H5. rewrite ostream_types_app in H5. simpl in H5.
-      eauto.
+    copy H1. rename H1 into Hstep.
+    eapply preservation' with (T:=Result) (E:=false) in H2; dtr; subst; eauto.
+    + econstructor; eauto.
+      eapply well_typed_backend_dist; auto.
+      * instantiate (1:=x); auto.
+      * copy H14; apply wt_to_backend_types in H14; subst.
+        copy H9; apply wt_to_ostream_types in H9; subst.
+        copy H0; apply wt_to_ostream_types in H0; subst.
+        copy H; apply wt_to_backend_types in H; subst.
+        copy H7; apply wt_to_top_ostream_types in H7; subst.
+        simpl in *.
+        assert (well_typed_backend (rstream_types rs0) (backend_types (<< N k t es; os ++ l ->> pfold f t1' ks :: os' >> :: b2) (rstream_types rs0)) (<< N k t es; os ++ l ->> pfold f t1' ks :: os' >> :: b2)).
+        {
+          eapply wt_backend_build; eauto.
+        }
+        simpl in H5. rewrite ostream_types_app in H5. simpl in H5.
+        eauto.
+    + instantiate (1:=k).
+      clear H0 H15 H14 H11 H2 H8 H7 H9 H10 H12 H Hstep.
+      unfold config_labels in Hdistinct; simpl in *.
+      apply distinct_app_comm in Hdistinct.
+      rewrite <- List.app_assoc in Hdistinct.
+      apply distinct_concat in Hdistinct; dtr.
+      apply distinct_app_comm in H0.
+      rewrite backend_labels_dist in H0.
+      rewrite <- List.app_assoc in H0.
+      apply distinct_concat in H0; dtr.
+      unfold backend_labels in H1; simpl in *.
+      rewrite <- List.app_assoc in H1.
+      rewrite ostream_labels_dist in H1.
+      rewrite <- List.app_assoc in H1.
+      apply distinct_app_comm in H1.
+      rewrite <- List.app_assoc in H1.
+      apply distinct_concat in H1; dtr.
+      apply distinct_app_comm in H2. unfold backend_labels. crush.
 Qed.
 
 Definition normal_form (c : config) : Prop :=
@@ -3781,17 +3859,70 @@ Ltac apply_preservation :=
   | [H: C _ _ _ _ --> C _ _ _ _ |- _] => eapply preservation in H; eauto
   end.
 
-Axiom fresh :
-  forall b os rs t t' os',
-  distinct (config_labels (C b os rs t)) ->
-  C b os rs t --> C b (os ++ os') rs t' ->
-  distinct (config_labels (C b (os ++ os') rs t')).
+Lemma not_equal_not_in : forall {A : Type} (x:A) xs,
+  (forall x', In x' xs -> x <> x') ->
+  not (In x xs).
+Proof using.
+  intros. intro. apply (@H x); auto.
+Qed.
 
-Axiom fresh' :
+Lemma fresh_not_in : forall b os rs t t' l op,
+  distinct (config_labels (C b os rs t)) ->
+  FRf t rs ==> FRt t' [l ->> op] ->
+  not (In l (config_labels (C b os rs t))).
+Proof using. intros; apply not_equal_not_in; auto. Qed.
+
+Lemma fresh_not_in' : forall b os rs t t' l k v,
+  distinct (config_keys (C b os rs t)) ->
+  FRf t rs ==> FRt t' [l ->> add k v] ->
+  not (In k (config_keys (C b os rs t))).
+Proof using. intros; apply not_equal_not_in; auto. Qed.
+
+Lemma fresh :
+  forall t b os rs t' os',
+  distinct (config_labels (C b os rs t)) ->
+  FRf t rs ==> FRt t' os' ->
+  distinct (List.concat [backend_labels b; ostream_labels (os ++ os'); rstream_labels rs]).
+Proof using.
+  induction t; intros; try solve [inv H0]; try solve [inv H0; try solve [eapply IHt in H; eauto]; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto]; try solve [crush]].
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_labels_dist. simpl.
+    replace  (backend_labels b ++ (ostream_labels os ++ [l]) ++ rstream_labels rs ++ []) with ((backend_labels b ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
+    apply distinct_rotate. econstructor; eauto.
+    + eapply fresh_not_in in H0; eauto. simpl in *. crush.
+    + crush.
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_labels_dist. simpl.
+    replace  (backend_labels b ++ (ostream_labels os ++ [l]) ++ rstream_labels rs ++ []) with ((backend_labels b ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
+    apply distinct_rotate. econstructor; eauto.
+    + eapply fresh_not_in in H0; eauto. simpl in *. crush.
+    + crush.
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_labels_dist. simpl.
+    replace  (backend_labels b ++ (ostream_labels os ++ [l]) ++ rstream_labels rs ++ []) with ((backend_labels b ++ ostream_labels os) ++ l :: rstream_labels rs) by crush.
+    apply distinct_rotate. econstructor; eauto.
+    + eapply fresh_not_in in H0; eauto. simpl in *. crush.
+    + crush.
+Qed.
+
+Lemma fresh' :
   forall b os rs t os' t',
   distinct (config_keys (C b os rs t)) ->
-  C b os rs t --> C b (os ++ os') rs t' ->
-  distinct (config_keys (C b (os ++ os') rs t')).
+  FRf t rs ==> FRt t' os' ->
+  distinct (List.concat [backend_keys b; ostream_keys (os ++ os')]).
+Proof using.
+  induction t; intros; try solve [inv H0]; try solve [inv H0; try solve [eapply IHt in H; eauto]; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto]; try solve [crush]].
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_keys_dist. unfold ostream_keys in *; crush.
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_keys_dist. unfold ostream_keys in *; crush.
+  - inversion H0; subst; try solve [eapply IHt1 in H; eauto]; try solve [eapply IHt2 in H; eauto]; try solve [eapply IHt3 in H; eauto].
+    simpl. rewrite ostream_keys_dist. unfold ostream_keys at 2; simpl.
+    rewrite List.app_nil_r. rewrite List.app_assoc.
+    apply distinct_rotate. econstructor; eauto.
+    + eapply fresh_not_in' in H0; eauto. simpl in *. crush.
+    + crush.
+Qed.
 
 Lemma well_typed_preservation :
   forall c1 c2,
@@ -3802,9 +3933,10 @@ Proof using.
   intros.
   inversion H0; inversion H; eapply WT; subst;
   try solve [match goal with | [H : exists _ _, _|- _] => destruct H as [T[E]] end; apply preservation with (T:=T) (E:=E) in H0; auto; destruct H0; destruct H0; inv H0; eauto];
-  try solve [match goal with | [H : distinct (config_keys _) |- _] => eapply fresh' in H end; [|eauto]; crush];
-  try solve [match goal with | [H : distinct (config_labels _) |- _] => eapply fresh in H end; [|eauto]; crush];
   try solve [apply_preservation].
+  (* S_Frontend *)
+  - eapply fresh'; eauto.
+  - eapply fresh; eauto.
   (* S_Empty *)
   - destruct op; crush.
   (* S_First *)
@@ -5133,18 +5265,6 @@ Lemma in_ostream_labels : forall os l op,
   In l (ostream_labels os).
 Proof using.
   induction os; intros.
-  - auto.
-  - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l).
-    + auto.
-    + inv H; eauto.
-      inv H0. eauto.
-Qed.
-
-Lemma in_rstream_labels : forall rs l v,
-  In (l ->>> v) rs ->
-  In l (rstream_labels rs).
-Proof using.
-  induction rs; intros.
   - auto.
   - destruct a. simpl. rename l0 into n. destruct (Nat.eq_dec n l).
     + auto.
