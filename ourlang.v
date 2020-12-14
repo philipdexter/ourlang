@@ -7482,6 +7482,7 @@ Hypothesis to_dry : forall c, exists n c', c -->*[n] c' /\ dry c'.
 
 (* noetharian induction hypothesis,
    check that it's only used starting from smaller structures relative to the starting configurations *)
+(*
 Axiom noe_indo :
   forall cx cy,
   cx == cy ->
@@ -7489,6 +7490,7 @@ Axiom noe_indo :
   cx -->*[n] cx' ->
   cy -->*[m] cy' ->
   (cx' -v cy').
+*)
 
 Lemma well_typed_preservation' : forall c n c',
   well_typed c ->
@@ -7503,6 +7505,434 @@ Qed.
 
 Hint Resolve well_typed_preservation'.
 
+Definition pp cx cy := well_typed cx -> well_typed cy -> cx == cy ->
+                                  forall cx' cy' n m,
+                                    cx -->*[n] cx' ->
+                                    cy -->*[m] cy' ->
+                                    cx' -v cy'.
+
+Definition r_complete (p : config -> config -> Prop) :=
+  forall cx, (forall cy cy' n m, cx -->*[n] cy -> cx -->*[m] cy' -> p cy cy') -> p cx cx.
+
+Lemma pp_r_complete :
+  r_complete pp.
+Proof using.
+  unfold r_complete; intros.
+    unfold pp in *.
+  intros.
+  (* rename cy into cT. *)
+  rename cy' into cz.
+  rename cx' into cy.
+  rename H3 into XY.
+  rename H4 into XZ.
+  assert (H3: 1 + 1 = 2) by auto.
+  destruct m; destruct n.
+  (* n = 0, m = 0 *)
+  - apply star_zero in XY.
+    apply star_zero in XZ.
+    crush.
+  (* n = 0, m > 0 *)
+  - inv XY.
+    apply star_zero in XZ; subst.
+    eapply ex_intro.
+    eapply ex_intro.
+    split; try split.
+    + instantiate (1:=cy).
+      crush.
+    + instantiate (1:=cy).
+      apply ex_intro with (S n).
+      apply Step with (y).
+      assumption.
+      assumption.
+    + crush.
+  (* n > 0, m = 0 *)
+  - inv XZ.
+    apply star_zero in XY; subst.
+    eapply ex_intro.
+    eapply ex_intro.
+    split; try split.
+    + instantiate (1:=cz).
+      apply ex_intro with (S m).
+      apply Step with (y).
+      assumption.
+      assumption.
+    + instantiate (1:=cz).
+      crush.
+    + crush.
+  (* n > 0, m > 0 *)
+  - inv XY.
+    rename y into cy'.
+    inv XZ.
+    rename y into cz'.
+    destruct (local_confluence H1 H5 H7).
+    destruct H4. destruct H4. destruct H9. destruct H4. destruct H9.
+    rename x into cy''.
+    rename x0 into cz''.
+    assert (exists n cw, cy -->*[n] cw /\ normal_form cw).
+    {
+      destruct (@to_dry cy); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n' H']. destruct H' as [cw cycw]. destruct cycw as [cycw nfcw].
+    assert (exists n cw', cy'' -->*[n] cw' /\ normal_form cw').
+    {
+      destruct (@to_dry cy''); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n'' H']. destruct H' as [cw' cycw']. destruct cycw' as [cycw' nfcw'].
+    assert (exists n cv, cz'' -->*[n] cv /\ normal_form cv).
+    {
+      destruct (@to_dry cz''); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n''' H']. destruct H' as [cv cycv]. destruct cycv as [cycv nfcv].
+    assert (exists n cv', cz -->*[n] cv' /\ normal_form cv').
+    {
+      destruct (@to_dry cz); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n'''' H']. destruct H' as [cv' cycv']. destruct cycv' as [cycv' nfcv'].
+    assert (Hsimcy' : cy' == cy') by crush.
+    assert (cw == cw').
+    {
+      edestruct H with (cy:=cy') (cy':=cy') (cx':=cw) (cy'0:=cw') (n:=1) (m:=1); eauto.
+      - destruct H11.
+        destruct H11.
+        destruct H11.
+        destruct H12.
+        destruct H12.
+        assert (x = cw).
+        {
+          destruct x3.
+          - apply star_zero in H11; eauto.
+          - inversion H11. subst. exfalso. unfold normal_form in nfcw. apply nfcw. eauto.
+        }
+        subst.
+        assert (x0 = cw').
+        {
+          destruct x4.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assumption.
+    }
+    assert (Hsimcz' : cz' == cz') by crush.
+    assert (cv == cv').
+    {
+      edestruct H with (cy:=cz') (cy':=cz') (cx':=cv) (cy'0:=cv') (n:=1); eauto.
+      - destruct H12.
+        destruct H12.
+        destruct H12.
+        destruct H13.
+        destruct H13.
+        assert (x = cv).
+        {
+          destruct x3.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst.
+        assert (x0 = cv').
+        {
+          destruct x4.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcv'. apply nfcv'. eauto.
+        }
+        subst. assumption.
+    }
+    assert (cw' == cv).
+    {
+      edestruct H with (cy:=cy'') (cy':=cz'') (cx':=cw') (cy'0:=cv) (n:=S x1) (m:=S x2); eauto.
+      - destruct H13.
+        destruct H13.
+        destruct H13.
+        destruct H14.
+        destruct H14.
+        assert (x = cw').
+        {
+          destruct x3.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assert (x0 = cv).
+        {
+          destruct x4.
+          - apply star_zero in H14; eauto.
+          - inversion H14. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst. assumption.
+    }
+    apply ex_intro with cw.
+    apply ex_intro with cv'.
+    split; try split.
+    + eauto.
+    + eauto.
+    + apply cequiv_trans with cw'; auto.
+      apply cequiv_trans with cv; auto.
+Qed.
+
+
+Axiom principal_of_noe_indo : forall P, r_complete P -> forall cx, P cx cx.
+
+Theorem confluence :
+  forall cx cy cz,
+  well_typed cx ->
+  (exists n, cx -->*[n] cy) ->
+  (exists m, cx -->*[m] cz) ->
+  (cy -v cz).
+Proof using.
+  intros.
+  destruct H0.
+  destruct H1.
+  edestruct (@principal_of_noe_indo pp) with (cx:=cx) (cx':=cy); eauto.
+- apply pp_r_complete.
+Qed.
+
+Lemma pp_rightarrow_complete :
+  forall cx, (forall cy cy' n m, cx -->*[n] cy -> cx -->*[m] cy' -> pp cy cy') -> pp cx cx.
+Proof.
+  intros.
+  unfold pp in *.
+  intros.
+  (* rename cy into cT. *)
+  rename cy' into cz.
+  rename cx' into cy.
+  rename H3 into XY.
+  rename H4 into XZ.
+  assert (H3: 1 + 1 = 2) by auto.
+  destruct m; destruct n.
+  (* n = 0, m = 0 *)
+  - apply star_zero in XY.
+    apply star_zero in XZ.
+    crush.
+  (* n = 0, m > 0 *)
+  - inv XY.
+    apply star_zero in XZ; subst.
+    eapply ex_intro.
+    eapply ex_intro.
+    split; try split.
+    + instantiate (1:=cy).
+      crush.
+    + instantiate (1:=cy).
+      apply ex_intro with (S n).
+      apply Step with (y).
+      assumption.
+      assumption.
+    + crush.
+  (* n > 0, m = 0 *)
+  - inv XZ.
+    apply star_zero in XY; subst.
+    eapply ex_intro.
+    eapply ex_intro.
+    split; try split.
+    + instantiate (1:=cz).
+      apply ex_intro with (S m).
+      apply Step with (y).
+      assumption.
+      assumption.
+    + instantiate (1:=cz).
+      crush.
+    + crush.
+  (* n > 0, m > 0 *)
+  - inv XY.
+    rename y into cy'.
+    inv XZ.
+    rename y into cz'.
+    destruct (local_confluence H1 H5 H7).
+    destruct H4. destruct H4. destruct H9. destruct H4. destruct H9.
+    rename x into cy''.
+    rename x0 into cz''.
+    assert (exists n cw, cy -->*[n] cw /\ normal_form cw).
+    {
+      destruct (@to_dry cy); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n' H']. destruct H' as [cw cycw]. destruct cycw as [cycw nfcw].
+    assert (exists n cw', cy'' -->*[n] cw' /\ normal_form cw').
+    {
+      destruct (@to_dry cy''); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n'' H']. destruct H' as [cw' cycw']. destruct cycw' as [cycw' nfcw'].
+    assert (exists n cv, cz'' -->*[n] cv /\ normal_form cv).
+    {
+      destruct (@to_dry cz''); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n''' H']. destruct H' as [cv cycv]. destruct cycv as [cycv nfcv].
+    assert (exists n cv', cz -->*[n] cv' /\ normal_form cv').
+    {
+      destruct (@to_dry cz); dtr.
+      exists x, x0. destruct x0.
+      split; [eauto|eapply dry_normal_form; eauto].
+    }
+    destruct H11 as [n'''' H']. destruct H' as [cv' cycv']. destruct cycv' as [cycv' nfcv'].
+    assert (Hsimcy' : cy' == cy') by crush.
+    assert (cw == cw').
+    {
+      edestruct H with (cy:=cy') (cy':=cy') (cx':=cw) (cy'0:=cw') (n:=1) (m:=1); eauto.
+      - destruct H11.
+        destruct H11.
+        destruct H11.
+        destruct H12.
+        destruct H12.
+        assert (x = cw).
+        {
+          destruct x3.
+          - apply star_zero in H11; eauto.
+          - inversion H11. subst. exfalso. unfold normal_form in nfcw. apply nfcw. eauto.
+        }
+        subst.
+        assert (x0 = cw').
+        {
+          destruct x4.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assumption.
+      (*
+      eapply noe_indo with (cx':=cw) (cy':=cw') in Hsimcy'.
+      - destruct Hsimcy'.
+        destruct H11.
+        destruct H11.
+        destruct H11.
+        destruct H12.
+        destruct H12.
+        assert (x = cw).
+        {
+          destruct x3.
+          - apply star_zero in H11; eauto.
+          - inversion H11. subst. exfalso. unfold normal_form in nfcw. apply nfcw. eauto.
+        }
+        subst.
+        assert (x0 = cw').
+        {
+          destruct x4.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst. assumption.
+      - instantiate (1:=n+n'). eauto.
+      - instantiate (1:=x1+n''). eauto.
+      *)
+    }
+    assert (Hsimcz' : cz' == cz') by crush.
+    assert (cv == cv').
+    {
+      edestruct H with (cy:=cz') (cy':=cz') (cx':=cv) (cy'0:=cv') (n:=1); eauto.
+      - destruct H12.
+        destruct H12.
+        destruct H12.
+        destruct H13.
+        destruct H13.
+        assert (x = cv).
+        {
+          destruct x3.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst.
+        assert (x0 = cv').
+        {
+          destruct x4.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcv'. apply nfcv'. eauto.
+        }
+        subst. assumption.
+      (*
+      eapply noe_indo with (cx':=cv) (cy':=cv') in Hsimcz'.
+      - destruct Hsimcz'.
+        destruct H12.
+        destruct H12.
+        destruct H12.
+        destruct H13.
+        destruct H13.
+        assert (x = cv).
+        {
+          destruct x3.
+          - apply star_zero in H12; eauto.
+          - inversion H12. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst.
+        assert (x0 = cv').
+        {
+          destruct x4.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcv'. apply nfcv'. eauto.
+        }
+        subst. assumption.
+      - instantiate (1:=x2+n'''). eauto.
+      - instantiate (1:=m+n''''). eauto.
+      *)
+    }
+    assert (cw' == cv).
+    {
+      edestruct H with (cy:=cy'') (cy':=cz'') (cx':=cw') (cy'0:=cv) (n:=S x1) (m:=S x2); eauto.
+      - destruct H13.
+        destruct H13.
+        destruct H13.
+        destruct H14.
+        destruct H14.
+        assert (x = cw').
+        {
+          destruct x3.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assert (x0 = cv).
+        {
+          destruct x4.
+          - apply star_zero in H14; eauto.
+          - inversion H14. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst. assumption.
+      (*      
+      eapply noe_indo with (cx':=cw') (cy':=cv) in H10.
+      - destruct H10.
+        destruct H10.
+        destruct H10.
+        destruct H10.
+        destruct H13.
+        destruct H13.
+        assert (x = cw').
+        {
+          destruct x3.
+          - apply star_zero in H10; eauto.
+          - inversion H10. subst. exfalso. unfold normal_form in nfcw'. apply nfcw'. eauto.
+        }
+        subst.
+        assert (x0 = cv).
+        {
+          destruct x4.
+          - apply star_zero in H13; eauto.
+          - inversion H13. subst. exfalso. unfold normal_form in nfcv. apply nfcv. eauto.
+        }
+        subst. assumption.
+      - eauto.
+      - eauto.
+      *)
+    }
+    apply ex_intro with cw.
+    apply ex_intro with cv'.
+    split; try split.
+    + eauto.
+    + eauto.
+    + apply cequiv_trans with cw'; auto.
+      apply cequiv_trans with cv; auto.
+Qed.
+
+(*
 Theorem confluence :
   forall cx cy cz,
   well_typed cx ->
@@ -7671,6 +8101,7 @@ Proof using.
     + apply cequiv_trans with cw'; auto.
       apply cequiv_trans with cv; auto.
 Qed.
+*)
 
 Lemma dry_goes_nowhere : forall c c',
   well_typed c ->
