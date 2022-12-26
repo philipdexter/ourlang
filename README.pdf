@@ -1,0 +1,116 @@
+%PDF-1.1
+1 0 obj
+<<
+/CreationDate (D:20220722175710)
+/Producer (text2pdf v1.1 (\251 Phil Smith, 1996))
+/Title (README.md)
+>>
+endobj
+2 0 obj
+<<
+/Type /Catalog
+/Pages 3 0 R
+>>
+endobj
+4 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/Name /F1
+/BaseFont /Courier
+>>
+endobj
+5 0 obj
+<<
+  /Font << /F1 4 0 R >>
+  /ProcSet [ /PDF /Text ]
+>>
+endobj
+6 0 obj
+<<
+/Type /Page
+/Parent 3 0 R
+/Resources 5 0 R
+/Contents 7 0 R
+>>
+endobj
+7 0 obj
+<<
+/Length 8 0 R
+>>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 50 752 Tm
+12 TL
+(# DON Calculus)'
+()'
+(You can build the proof by running `./build.sh`, which will build the docker)'
+(container and check the proof \(it will take a few minutes\). The proof is)'
+(verified when the command finishes without an error code.)'
+()'
+(Building can also be done by running `make`, assuming a recent version of Coq)'
+(is installed locally.)'
+()'
+(# Paper-to-artifact correspondence)'
+()'
+(The paper is represented through a series of Coq files.)'
+(Notice how some of the )'
+(TODO list here and put section numbers of paper)'
+()'
+(SyntaxRuntime.v - Section 3)'
+(OperationalSemantics.v - Section 4)'
+(Typing.v - Section 5)'
+(MetaTheoryBase.v - Section 6)'
+(MetaTheoryLocalConfluence.v - Section 6)'
+(MetaTheoryTyping.v - Section 6)'
+(MetaTheory.v - Section 6)'
+()'
+(The most important theorems and corollaries are in MetaTheory.v.)'
+()'
+(There are inline comments throughout the files with direct references to the pap)'
+(er. They)'
+(are repeated here for convenience \(file followed by line number\):)'
+()'
+(SyntaxRuntime.v:19:         \(* Fig 6: Abstract Syntax and Fig 8: Runtime Definit)'
+(ions *\))'
+(OperationalSemantics.v:209: \(* Fig 11: Operational Semantics *\))'
+(OperationalSemantics.v:262: \(* Fig 12: Temporal Locality Optimization *\))'
+(Typing.v:21:                \(* Fig 13: Type system *\))'
+(MetaTheoryTyping.v:2027:    \(* Lemma 6.1 *\))'
+(MetaTheoryTyping.v:1198:    \(* Lemma 6.2 *\))'
+(MetaTheoryTyping.v:2750:    \(* Theorem 6.3 *\))'
+(MetaTheory.v:249:           \(* Theorem 6.5 and Corollary 6.7 *\))'
+(MetaTheory.v:267:           \(* Theorem 6.6 *\))'
+()'
+(# Assumptions)'
+()'
+(We have no `admit` statements in the proof, and the only axioms we use are for)'
+(generating fresh labels and keys, functional extension, and principal of)'
+(noetherian \(well-founded\) induction.)'
+()'
+ET
+endstream
+endobj
+8 0 obj
+1856
+endobj
+3 0 obj
+<<
+/Type /Pages
+/Count 1
+/MediaBox [ 0 0 612 792 ]
+/Kids [ 6 0 R ]
+>>
+endobj
+xref
+0 9
+0000000000 65535 f 0000000009 00000 n 0000000132 00000 n 0000002338 00000 n 0000000181 00000 n 0000000259 00000 n 0000000330 00000 n 0000000410 00000 n 0000002318 00000 n trailer
+<<
+/Size 9
+/Root 2 0 R
+/Info 1 0 R
+>>
+startxref
+2423
+%%EOF

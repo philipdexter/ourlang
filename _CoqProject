@@ -2,4 +2,10 @@
 ./CpdtTactics.v
 ./Maps.v
 ./NMaps.v
-./ourlang.v
+./SyntaxRuntime.v
+./Typing.v
+./OperationalSemantics.v
+./MetaTheoryBase.v
+./MetaTheoryTyping.v
+./MetaTheoryLocalConfluence.v
+./MetaTheory.v

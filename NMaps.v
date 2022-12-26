@@ -208,8 +208,8 @@ Proof. reflexivity. Qed.
 
 Lemma t_apply_empty : forall (A : Type) (x : nat) (v : A),
     (_ !-> v) x = v.
-Proof.
-  (* FILL IN HERE *) Admitted.
+Proof.  intros. unfold t_empty. auto.
+Qed.
 (** [] *)
 
 (** **** Exercise: 2 stars, standard, optional (t_update_eq)  
@@ -220,8 +220,13 @@ Proof.
 
 Lemma t_update_eq : forall (A : Type) (m : total_map A) x v,
     (x !-> v ; m) x = v.
-Proof.
-  (* FILL IN HERE *) Admitted.
+Proof. intros.
+  unfold t_update.
+  assert (true = eqb_nat x x).
+  apply eqb_nat_refl.
+  replace (eqb_nat x x) with true.
+  auto.
+Qed.
 (** [] *)
 
 (** **** Exercise: 2 stars, standard, optional (t_update_neq)  
@@ -234,7 +239,14 @@ Theorem t_update_neq : forall (A : Type) (m : total_map A) x1 x2 v,
     x1 <> x2 ->
     (x1 !-> v ; m) x2 = m x2.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros.
+  unfold t_update.
+  assert (eqb_nat x1 x2 = false).
+  apply eqb_nat_false_iff.
+  auto.
+  replace (eqb_nat x1 x2) with false.
+  auto.
+Qed.
 (** [] *)
 
 (** **** Exercise: 2 stars, standard, optional (t_update_shadow)  
@@ -248,7 +260,11 @@ Proof.
 Lemma t_update_shadow : forall (A : Type) (m : total_map A) x v1 v2,
     (x !-> v2 ; x !-> v1 ; m) = (x !-> v2 ; m).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros.
+  unfold t_update.
+  apply functional_extensionality_dep; intros.
+  destruct (eqb_nat x x0); auto.
+Qed.
 (** [] *)
 
 (** For the final two lemmas about total maps, it's convenient to use
@@ -264,7 +280,14 @@ Proof.
 Lemma eqb_natP : forall x y : nat,
     reflect (x = y) (eqb_nat x y).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros.
+  apply iff_reflect.
+  split; intros.
+  rewrite H.
+  symmetry.
+  apply eqb_nat_refl.
+  apply eqb_nat_true_iff; auto.
+Qed.
 (** [] *)
 
 (** Now, given [string]s [x1] and [x2], we can use the tactic
@@ -283,7 +306,11 @@ Proof.
 Theorem t_update_same : forall (A : Type) (m : total_map A) x,
     (x !-> m x ; m) = m.
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros.
+  unfold t_update.
+  apply functional_extensionality_dep; intros.
+  destruct (eqb_natP x x0); auto.
+Qed.
 (** [] *)
 
 (** **** Exercise: 3 stars, standard, recommended (t_update_permute)  
@@ -299,7 +326,18 @@ Theorem t_update_permute : forall (A : Type) (m : total_map A)
     =
     (x2 !-> v2 ; x1 !-> v1 ; m).
 Proof.
-  (* FILL IN HERE *) Admitted.
+  intros.
+  unfold t_update.
+  apply functional_extensionality_dep; intros.
+  destruct (eqb_natP x1 x).
+  destruct (eqb_natP x2 x).
+  rewrite <- e in e0.
+  rewrite e0 in H.
+  exfalso.
+  apply H; auto.
+  auto.
+  destruct (eqb_nat x2 x); auto.
+Qed.
 (** [] *)
 
 (* ################################################################# *)
